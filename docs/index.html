@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NQ 변곡점 / 강추세 Fingerprint 연구 (v4_path)</title>
-<meta name="description" content="NQ 17.4년 1m+5m 데이터 기반 변곡점·추세종료 fingerprint 연구. AUC 0.875~0.954 식별, KST × ATR × pre_dir cell 기반 WR 75-89% 진짜 edge.">
+<title>NQ 변곡점·강추세 종료 특징 연구 (v4_path)</title>
+<meta name="description" content="NASDAQ-100 선물 17.4년 1분·5분봉 데이터로 변곡점과 강추세 종료를 식별하는 연구. 사전 features 만으로 AUC 0.875~0.954, 시간대×ATR×사전방향 셀 결합 시 승률 75-89%.">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
 :root {
@@ -88,7 +88,7 @@ li { margin: 4px 0; }
 }
 .tldr p { margin: 0; }
 .tldr .label {
-  font-size: 11px; letter-spacing: 1.5px; text-transform: uppercase;
+  font-size: 11px; letter-spacing: 1.5px;
   color: var(--accent); font-weight: 700; margin-bottom: 8px;
 }
 table {
@@ -139,7 +139,7 @@ code:not(pre code) {
 .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
 .card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
 .metric { display: flex; flex-direction: column; gap: 4px; padding: 14px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; }
-.metric .label { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: var(--fg-dim); }
+.metric .label { font-size: 11px; letter-spacing: 1px; color: var(--fg-dim); }
 .metric .value { font-size: 28px; font-weight: 700; color: #f0f6fc; }
 .metric .delta { font-size: 12px; }
 .metric-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 16px 0; }
@@ -165,22 +165,22 @@ footer {
 <div class="layout">
 
 <nav class="toc">
-<h2>Contents</h2>
+<h2>차례</h2>
 <ul>
-<li><a href="#tldr">Executive Summary</a></li>
+<li><a href="#tldr">한 줄 요약</a></li>
 <li><a href="#bg">1. 배경</a></li>
 <li><a href="#data">2. 데이터·방법론</a></li>
 <li><a href="#results">3. 결과</a></li>
-<li class="sub"><a href="#r31">3.1 Cross-TF</a></li>
-<li class="sub"><a href="#r32">3.2 AUC</a></li>
-<li class="sub"><a href="#r33">3.3 Cluster</a></li>
-<li class="sub"><a href="#r34">3.4 Hit Rate</a></li>
-<li class="sub"><a href="#r35">3.5 Tier A</a></li>
-<li class="sub"><a href="#r36">3.6 Cells ⭐</a></li>
+<li class="sub"><a href="#r31">3.1 시간단위 일관성</a></li>
+<li class="sub"><a href="#r32">3.2 사전 AUC</a></li>
+<li class="sub"><a href="#r33">3.3 군집</a></li>
+<li class="sub"><a href="#r34">3.4 적중률</a></li>
+<li class="sub"><a href="#r35">3.5 등급 A</a></li>
+<li class="sub"><a href="#r36">3.6 셀 ⭐</a></li>
 <li><a href="#pine">4. Pine 룰</a></li>
 <li><a href="#impl">5. 거래 함의</a></li>
-<li><a href="#repro">6. Reproducibility</a></li>
-<li><a href="#caveats">7. Caveats</a></li>
+<li><a href="#repro">6. 재현 가이드</a></li>
+<li><a href="#caveats">7. 한계</a></li>
 </ul>
 <div class="meta">
 v4_path 연구<br>
@@ -191,26 +191,26 @@ NQ 17.4년 1m+5m
 
 <main>
 
-<h1>NQ 변곡점 / 강추세 Fingerprint 연구</h1>
-<p class="subtitle">v4_path · 2026-04-29 · NQ 5,809,378 1m bars × 17.4년 · Retrospective profiling</p>
+<h1>NQ 변곡점·강추세 종료 특징 연구</h1>
+<p class="subtitle">v4_path · 2026-04-29 · NQ 1분봉 5,809,378개 × 17.4년 · 사후 분석 기반</p>
 
 <section id="tldr">
 <div class="tldr">
-<div class="label">Executive Summary</div>
-<p>변곡점(inflection)과 강추세 종료(trend exhaustion)는 <strong>데이터로 명확히 식별 가능</strong> — Pre-only features 만으로 GBM AUC 0.875~0.954, precision @ top-10% 89~96%. 단순 룰 trigger 만으론 forward EV ≈ 0 이지만, <strong>KST 시간대 + ATR 구간 + 직전 방향 결합 시</strong> forward sharpe +0.3~0.6 / WR 75~89% 의 진짜 edge 발견. 사용자 BURN_X 운용 경험의 데이터 입증.</p>
+<div class="label">한 줄 요약</div>
+<p>변곡점(고점·저점 반전)과 강추세 종료 지점은 <strong>데이터로 명확히 식별 가능</strong> — 사전(t0 시점) features 만으로 그래디언트 부스팅 모델이 정확도(AUC) 0.875~0.954, 상위 10% 예측에서 정밀도 89~96%. 단순 룰 발동만으론 사후 평균 변동 ≈ 0 이지만, <strong>KST 시간대 + ATR 구간 + 직전 방향 결합 시</strong> 사후 샤프 +0.3~0.6 / 승률 75~89% 의 진짜 우위(edge) 발견. 사용자의 BURN_X 운용 경험이 데이터로 입증됨.</p>
 </div>
 
 <div class="metric-row">
-<div class="metric"><span class="label">H1 Inflection AUC</span><span class="value pass">0.875+</span><span class="delta">≥0.80 PASS</span></div>
-<div class="metric"><span class="label">H2 Trend End AUC</span><span class="value pass">0.934+</span><span class="delta">≥0.85 PASS</span></div>
-<div class="metric"><span class="label">H3 Pre-only AUC</span><span class="value pass">0.875+</span><span class="delta">8/8 PASS</span></div>
-<div class="metric"><span class="label">H4 Cluster</span><span class="value fail">0.19</span><span class="delta">silhouette &lt;0.30 (good NOGO)</span></div>
-<div class="metric"><span class="label">H5 Tier A</span><span class="value partial">PARTIAL</span><span class="delta">Bear PASS, Bull TF 의존</span></div>
-<div class="metric"><span class="label">Top WR cell</span><span class="value hi">88.9%</span><span class="delta">5m low / Other / low / down</span></div>
+<div class="metric"><span class="label">H1 변곡점 식별 AUC</span><span class="value pass">0.875+</span><span class="delta">≥0.80 통과</span></div>
+<div class="metric"><span class="label">H2 추세종료 식별 AUC</span><span class="value pass">0.934+</span><span class="delta">≥0.85 통과</span></div>
+<div class="metric"><span class="label">H3 사전 features AUC</span><span class="value pass">0.875+</span><span class="delta">8/8 통과</span></div>
+<div class="metric"><span class="label">H4 군집 분리</span><span class="value fail">0.19</span><span class="delta">&lt;0.30 (좋은 기각)</span></div>
+<div class="metric"><span class="label">H5 등급 A</span><span class="value partial">부분 통과</span><span class="delta">하락 OB 통과 / 상승 OB 시간대별</span></div>
+<div class="metric"><span class="label">최고 승률 셀</span><span class="value hi">88.9%</span><span class="delta">5분봉·기타 시간대·저ATR·하락사전</span></div>
 </div>
 
 <div class="chart-wrap">
-<h4>Phase 3.2 Pre-only AUC (OOS 12개월)</h4>
+<h4>3.2 사전 features AUC (표본외 12개월)</h4>
 <div class="chart-canvas-wrap"><canvas id="aucChart"></canvas></div>
 </div>
 </section>
@@ -218,14 +218,14 @@ NQ 17.4년 1m+5m
 <section id="bg">
 <h2>1. 배경 / 동기</h2>
 
-<h3>V1: Forward Prediction (NOGO)</h3>
-<p>처음 접근은 "변곡점 직후 5분 V/W/drift 예측". 결과: drift 비율 0.1% (boundary 너무 빡빡), strong_pre 효과 +1~2%p (Cohen's d ≈ 0.05) — <strong>forward path 자체가 noise dominant, 50-55% 천장</strong>.</p>
+<h3>v1: 사후 예측 (실패)</h3>
+<p>처음 접근은 "변곡점 직후 5분 V/W/추세지속 예측". 결과: 추세지속 비율 0.1% (경계값 너무 빡빡), 직전 강도 효과 +1~2%p (효과 크기 ≈ 0.05) — <strong>사후 가격 path 자체가 노이즈에 압도되어 50-55% 천장</strong>.</p>
 
-<h3>V2 reframed: Retrospective Profiling</h3>
+<h3>v2 방향 전환: 사후 식별(특징 분석)</h3>
 <div class="callout">
-사용자 통찰 (2026-04-29): "변곡점만 잡으려는 방식 말고, 변곡점들을 쫙 정리해서 보조지표/움직임/SR/추세 기준으로 연구. 강한추세케이스도."
+사용자 통찰 (2026-04-29): "변곡점만 잡으려는 방식 말고, 변곡점들을 쫙 정리해서 보조지표·움직임·지지저항·추세 기준으로 연구해봐. 강한 추세 케이스도."
 </div>
-<p>전환: forward 예측 → <strong>retrospective 이벤트 enumeration + 시점별 fingerprint 분석</strong>. 근거: BTC bot 04-06 SUSPENDED 사건 (MFE/MAE 백테스트 WR 95.6% → 분봉 path 44.8%) — 측정법 결함이 결론을 왜곡한 사례.</p>
+<p>전환: 사후 예측 → <strong>역사 데이터에서 이미 발생한 변곡·추세종료 이벤트들을 enumerate 후, 그 시점의 시장 상태(특징)를 분석</strong>. 근거: BTC 봇 04-06 중지 사례 (MFE/MAE 백테스트 승률 95.6% → 분봉 path 44.8%) — 측정법 결함이 결론을 왜곡한 사례.</p>
 </section>
 
 <section id="data">
@@ -233,47 +233,47 @@ NQ 17.4년 1m+5m
 
 <h3>데이터</h3>
 <table>
-<tr><th>Source</th><td>FirstRateData NQ E-mini Futures</td></tr>
+<tr><th>출처</th><td>FirstRateData NQ E-mini 선물</td></tr>
 <tr><th>기간</th><td>2008-12-11 ~ 2026-04-15 (17.4년)</td></tr>
-<tr><th>1m bars</th><td class="num">5,809,378</td></tr>
-<tr><th>5m bars</th><td class="num">1,217,620</td></tr>
-<tr><th>포맷</th><td>CSV (DD/MM/YYYY;HH:MM;O;H;L;C;V, ET timezone) → parquet</td></tr>
+<tr><th>1분봉</th><td class="num">5,809,378 개</td></tr>
+<tr><th>5분봉</th><td class="num">1,217,620 개</td></tr>
+<tr><th>형식</th><td>CSV (DD/MM/YYYY;HH:MM;O;H;L;C;V, ET 시간대) → parquet 변환</td></tr>
 </table>
 
-<h3>Pivot 정의 (3종 cross-comparison)</h3>
+<h3>변곡점 정의 (3종 비교 검증)</h3>
 <table>
-<tr><th>Tag</th><th>정의</th><th class="num">5m N</th><th class="num">1m N</th></tr>
-<tr><td><b>F</b> Fractal</td><td>좌우 N=5 swing high/low + 직전 strict 비교</td><td class="num">163,054</td><td class="num">838,274</td></tr>
-<tr><td><b>L</b> Legacy</td><td>Pine MNQ_Signal 의 V/W/SHORT/NOS</td><td class="num">73,898</td><td class="num">207,770</td></tr>
-<tr><td><b>O</b> OB Origin</td><td>R41A Bull / R42A Bear OB BOS confirm</td><td class="num">20,050</td><td class="num">86,765</td></tr>
-<tr><td><b>ZigZag</b></td><td>1.5×ATR threshold 반전</td><td class="num">208,013</td><td class="num">1,067,379</td></tr>
+<tr><th>구분</th><th>정의</th><th class="num">5분봉 N</th><th class="num">1분봉 N</th></tr>
+<tr><td><b>F</b> 프랙탈</td><td>좌·우 5봉 swing high/low + 직전 봉 비교</td><td class="num">163,054</td><td class="num">838,274</td></tr>
+<tr><td><b>L</b> 레거시 신호</td><td>기존 Pine 의 V/W/SHORT/NOS</td><td class="num">73,898</td><td class="num">207,770</td></tr>
+<tr><td><b>O</b> 오더블록 기원</td><td>R41A/R42A 오더블록 BOS 확정</td><td class="num">20,050</td><td class="num">86,765</td></tr>
+<tr><td><b>지그재그</b></td><td>1.5×ATR 임계값 반전</td><td class="num">208,013</td><td class="num">1,067,379</td></tr>
 </table>
 
-<h3>Feature 22종 (PROFILE_NUMERIC)</h3>
+<h3>특징(feature) 22종</h3>
 <div class="grid-2">
 <div class="card">
-<h4>Indicators (9)</h4>
-<p><code>atr_ratio</code>, <code>RSI14</code>, <code>MFI14</code>, <code>Stoch K/D</code>, <code>BB %B / width</code>, <code>RVOL</code>, <code>vol_z</code></p>
+<h4>보조지표 (9종)</h4>
+<p><code>ATR 비율</code>, <code>RSI14</code>, <code>MFI14</code>, <code>스토캐스틱 K/D</code>, <code>볼린저 %B / 폭</code>, <code>상대거래량(RVOL)</code>, <code>거래량 z-score</code></p>
 </div>
 <div class="card">
-<h4>Regime (2)</h4>
-<p><code>slope_pct</code> (EMA200 24h slope), <code>above_pct</code> (50봉 above ratio)</p>
+<h4>장세(regime, 2종)</h4>
+<p><code>EMA200 24시간 기울기</code>, <code>EMA200 위 50봉 비율</code></p>
 </div>
 <div class="card">
-<h4>Bar shape (3, ATR 정규화)</h4>
-<p><code>body_to_atr</code>, <code>upper_wick_to_atr</code>, <code>lower_wick_to_atr</code></p>
+<h4>봉 모양 (3종, ATR 정규화)</h4>
+<p><code>몸통/ATR</code>, <code>위꼬리/ATR</code>, <code>아래꼬리/ATR</code></p>
 </div>
 <div class="card">
-<h4>SR distance (5, ATR 정규화)</h4>
-<p><code>HH20</code>, <code>LL20</code>, <code>EMA20/50/200</code></p>
+<h4>지지·저항 거리 (5종, ATR 정규화)</h4>
+<p>최근 20봉 고가·저가, EMA20·50·200 까지의 거리</p>
 </div>
 <div class="card">
-<h4>Pre-context (3, ATR 정규화)</h4>
-<p>5/15/30봉 net displacement</p>
+<h4>사전 가격 변화 (3종, ATR 정규화)</h4>
+<p>5/15/30봉 순 변동</p>
 </div>
 <div class="card">
-<h4>Event 정의</h4>
-<p><b>Inflection</b>: back ≥ 2.0×ATR AND fwd ≥ 2.0×ATR · <b>Trend End</b>: leg ≥ 3.0×ATR AND ≥5 bars</p>
+<h4>이벤트 정의</h4>
+<p><b>변곡점</b>: 사전 leg ≥ 2.0×ATR 그리고 사후 leg ≥ 2.0×ATR (양쪽 강한 반전) · <b>추세종료</b>: leg ≥ 3.0×ATR 그리고 5봉 이상</p>
 </div>
 </div>
 </section>
@@ -282,120 +282,120 @@ NQ 17.4년 1m+5m
 <h2>3. 결과</h2>
 
 <section id="r31">
-<h3>3.1 Cross-TF Fingerprint Consistency — 85% PASS</h3>
-<p>5m 의 top-15 discriminator 중 1m 에서도 |Cohen's d| ≥ 0.5 비율:</p>
+<h3>3.1 시간단위 간 특징 일관성 — 85% 통과</h3>
+<p>5분봉의 상위 15개 식별 특징 중 1분봉에서도 효과 크기 |Cohen's d| ≥ 0.5 인 비율:</p>
 <table>
-<tr><th>이벤트</th><th class="num">consistency</th></tr>
-<tr><td>inflection_high</td><td class="num">67%</td></tr>
-<tr><td>inflection_low</td><td class="num">87%</td></tr>
-<tr><td>trend_end_high</td><td class="num pass">93%</td></tr>
-<tr><td>trend_end_low</td><td class="num pass">93%</td></tr>
+<tr><th>이벤트</th><th class="num">일관성</th></tr>
+<tr><td>변곡 상단 (고점)</td><td class="num">67%</td></tr>
+<tr><td>변곡 하단 (저점)</td><td class="num">87%</td></tr>
+<tr><td>강한 상승 종료</td><td class="num pass">93%</td></tr>
+<tr><td>강한 하락 종료</td><td class="num pass">93%</td></tr>
 <tr><td><b>평균</b></td><td class="num pass"><b>85%</b></td></tr>
 </table>
-<p>→ TF 무관 동일 fingerprint. <strong>scale-independent edge</strong> 입증.</p>
+<p>→ 시간단위에 무관하게 동일한 특징 패턴. <strong>단위 독립적 우위(edge)</strong> 입증.</p>
 </section>
 
 <section id="r32">
-<h3>3.2 Pre-only AUC — H1/H2/H3 ALL PASS ✓</h3>
-<p>OOS 12개월 (2025-04-15 ~ 2026-04-15), GBM (n_est=100, depth=3).</p>
+<h3>3.2 사전 features 만으로 식별 정확도(AUC) — H1·H2·H3 모두 통과 ✓</h3>
+<p>표본외 12개월 (2025-04-15 ~ 2026-04-15) 기준, 그래디언트 부스팅 (n_est=100, depth=3).</p>
 <table>
-<tr><th>event</th><th>TF</th><th class="num">LR AUC</th><th class="num">GBM AUC</th><th class="num">overfit gap</th><th class="num">precision@10%</th></tr>
-<tr><td>inflection_high</td><td>1m</td><td class="num">0.857</td><td class="num pass">0.877</td><td class="num">+0.010</td><td class="num">0.892</td></tr>
-<tr><td>inflection_low</td><td>1m</td><td class="num">0.867</td><td class="num pass">0.884</td><td class="num">+0.008</td><td class="num">0.888</td></tr>
-<tr><td>trend_end_high</td><td>1m</td><td class="num">0.929</td><td class="num pass">0.937</td><td class="num">+0.009</td><td class="num">0.935</td></tr>
-<tr><td>trend_end_low</td><td>1m</td><td class="num">0.933</td><td class="num pass">0.941</td><td class="num">+0.008</td><td class="num">0.955</td></tr>
-<tr><td>inflection_high</td><td>5m</td><td class="num">0.856</td><td class="num pass">0.875</td><td class="num">+0.017</td><td class="num">0.899</td></tr>
-<tr><td>inflection_low</td><td>5m</td><td class="num">0.892</td><td class="num pass">0.904</td><td class="num">+0.002</td><td class="num">0.923</td></tr>
-<tr><td>trend_end_high</td><td>5m</td><td class="num">0.924</td><td class="num pass">0.934</td><td class="num">+0.012</td><td class="num">0.948</td></tr>
-<tr><td>trend_end_low</td><td>5m</td><td class="num">0.947</td><td class="num pass">0.954</td><td class="num">+0.002</td><td class="num">0.954</td></tr>
+<tr><th>이벤트</th><th>봉</th><th class="num">로지스틱 AUC</th><th class="num">부스팅 AUC</th><th class="num">과적합 격차</th><th class="num">상위 10% 정밀도</th></tr>
+<tr><td>변곡 상단</td><td>1m</td><td class="num">0.857</td><td class="num pass">0.877</td><td class="num">+0.010</td><td class="num">0.892</td></tr>
+<tr><td>변곡 하단</td><td>1m</td><td class="num">0.867</td><td class="num pass">0.884</td><td class="num">+0.008</td><td class="num">0.888</td></tr>
+<tr><td>상승 종료</td><td>1m</td><td class="num">0.929</td><td class="num pass">0.937</td><td class="num">+0.009</td><td class="num">0.935</td></tr>
+<tr><td>하락 종료</td><td>1m</td><td class="num">0.933</td><td class="num pass">0.941</td><td class="num">+0.008</td><td class="num">0.955</td></tr>
+<tr><td>변곡 상단</td><td>5m</td><td class="num">0.856</td><td class="num pass">0.875</td><td class="num">+0.017</td><td class="num">0.899</td></tr>
+<tr><td>변곡 하단</td><td>5m</td><td class="num">0.892</td><td class="num pass">0.904</td><td class="num">+0.002</td><td class="num">0.923</td></tr>
+<tr><td>상승 종료</td><td>5m</td><td class="num">0.924</td><td class="num pass">0.934</td><td class="num">+0.012</td><td class="num">0.948</td></tr>
+<tr><td>하락 종료</td><td>5m</td><td class="num">0.947</td><td class="num pass">0.954</td><td class="num">+0.002</td><td class="num">0.954</td></tr>
 </table>
-<p><strong>Min AUC 0.875 / Max 0.954 / Overfit gap ≤ 0.017 모두 healthy</strong>.</p>
+<p><strong>최저 AUC 0.875 / 최고 0.954 / 과적합 격차 ≤ 0.017 (모두 건강한 수준)</strong>.</p>
 
 <div class="chart-wrap">
-<h4>Top features (GBM importance, 5m)</h4>
+<h4>5분봉 그래디언트 부스팅 특징 중요도 상위</h4>
 <div class="chart-canvas-wrap chart-tall"><canvas id="featChart"></canvas></div>
 </div>
 
 <table>
-<tr><th>Event</th><th>TOP-1</th><th>TOP-2</th><th class="num">합계</th></tr>
-<tr><td>inflection_high</td><td>upper_wick_to_atr</td><td>pre_5_disp_atr</td><td class="num">65%</td></tr>
-<tr><td>inflection_low</td><td>lower_wick_to_atr</td><td>pre_5_disp_atr</td><td class="num">66%</td></tr>
-<tr><td>trend_end_high</td><td>stoch_d</td><td>pre_5_disp_atr</td><td class="num">66%</td></tr>
-<tr><td>trend_end_low</td><td>stoch_d</td><td>pre_5_disp_atr</td><td class="num">70%</td></tr>
+<tr><th>이벤트</th><th>1순위</th><th>2순위</th><th class="num">합계</th></tr>
+<tr><td>변곡 상단</td><td>위꼬리/ATR</td><td>사전 5봉 변동/ATR</td><td class="num">65%</td></tr>
+<tr><td>변곡 하단</td><td>아래꼬리/ATR</td><td>사전 5봉 변동/ATR</td><td class="num">66%</td></tr>
+<tr><td>상승 종료</td><td>스토캐스틱 D</td><td>사전 5봉 변동/ATR</td><td class="num">66%</td></tr>
+<tr><td>하락 종료</td><td>스토캐스틱 D</td><td>사전 5봉 변동/ATR</td><td class="num">70%</td></tr>
 </table>
-<div class="callout success">단 2~3 features 만으로 65-70% importance. <strong>Pine 룰 1줄 표현 가능</strong>.</div>
+<div class="callout success">단 2~3 개 features 만으로 65-70% 의 중요도 차지. <strong>Pine 룰 한 줄로 표현 가능</strong>.</div>
 </section>
 
 <section id="r33">
-<h3>3.3 Cluster Sub-type — H4 NOGO (좋은 의미)</h3>
+<h3>3.3 하위 군집 — H4 기각 (좋은 의미)</h3>
 <table>
-<tr><th>event</th><th class="num">k_best</th><th class="num">silhouette</th><th class="num">spread V%</th><th>verdict</th></tr>
-<tr><td>inflection_high</td><td class="num">3</td><td class="num">0.191</td><td class="num">4.4</td><td class="fail">FAIL</td></tr>
-<tr><td>inflection_low</td><td class="num">3</td><td class="num">0.190</td><td class="num">5.2</td><td class="partial">MARGINAL</td></tr>
-<tr><td>trend_end_high</td><td class="num">3</td><td class="num">0.182</td><td class="num">2.6</td><td class="fail">FAIL</td></tr>
-<tr><td>trend_end_low</td><td class="num">3</td><td class="num">0.178</td><td class="num">2.1</td><td class="fail">FAIL</td></tr>
+<tr><th>이벤트</th><th class="num">최적 k</th><th class="num">실루엣</th><th class="num">사후 V 비율 분산</th><th>판정</th></tr>
+<tr><td>변곡 상단</td><td class="num">3</td><td class="num">0.191</td><td class="num">4.4</td><td class="fail">실패</td></tr>
+<tr><td>변곡 하단</td><td class="num">3</td><td class="num">0.190</td><td class="num">5.2</td><td class="partial">미흡</td></tr>
+<tr><td>상승 종료</td><td class="num">3</td><td class="num">0.182</td><td class="num">2.6</td><td class="fail">실패</td></tr>
+<tr><td>하락 종료</td><td class="num">3</td><td class="num">0.178</td><td class="num">2.1</td><td class="fail">실패</td></tr>
 </table>
-<p>→ Cluster 분리 불가 = <strong>단일 패턴 (continuous spectrum)</strong>. Sub-type 별 다른 룰 불필요. <strong>단일 GBM 으로 충분</strong> 입증.</p>
+<p>→ 군집 분리 불가 = <strong>단일 패턴 (연속 스펙트럼)</strong>. 하위 유형별 별도 룰 불필요. <strong>단일 부스팅 모델로 충분</strong> 입증.</p>
 </section>
 
 <section id="r34">
-<h3>3.4 Pine 룰 후보 — Hit Rate PASS, Forward EV 중립</h3>
-<p>GBM top features 기반 4 룰 (<code>upper_wick + pre_5_disp + stoch_k + bb_pctb</code> 등):</p>
+<h3>3.4 Pine 룰 후보 — 적중률 통과, 사후 변동 중립</h3>
+<p>부스팅 상위 features 기반 4 룰 (<code>위꼬리 + 사전 5봉 변동 + 스토캐스틱 K + 볼린저 %B</code> 등):</p>
 <table>
-<tr><th>룰</th><th>TF</th><th class="num">triggers</th><th class="num">hit rate ±2bar</th><th class="num">lift</th><th class="num">forward w15 EV</th></tr>
-<tr><td>inflection_high</td><td>5m</td><td class="num">2.96%</td><td class="num pass">54.9%</td><td class="num">2.4x</td><td class="num">−0.78 pt</td></tr>
-<tr><td>inflection_low</td><td>5m</td><td class="num">3.41%</td><td class="num pass">61.3%</td><td class="num">2.6x</td><td class="num">−0.10 pt</td></tr>
-<tr><td>trend_end_high</td><td>5m</td><td class="num">2.02%</td><td class="num pass">52.9%</td><td class="num">4.2x</td><td class="num">−0.34 pt</td></tr>
-<tr><td>trend_end_low</td><td>5m</td><td class="num">2.18%</td><td class="num pass">56.0%</td><td class="num">4.9x</td><td class="num">−1.08 pt</td></tr>
-<tr><td>inflection_high</td><td>1m</td><td class="num">2.87%</td><td class="num pass">55.8%</td><td class="num">2.2x</td><td class="num">−0.08 pt</td></tr>
-<tr><td>inflection_low</td><td>1m</td><td class="num">3.04%</td><td class="num pass">59.7%</td><td class="num">2.3x</td><td class="num">+0.00 pt</td></tr>
-<tr><td>trend_end_high</td><td>1m</td><td class="num">1.97%</td><td class="num pass">56.7%</td><td class="num">4.1x</td><td class="num">−0.08 pt</td></tr>
-<tr><td>trend_end_low</td><td>1m</td><td class="num">2.04%</td><td class="num pass">58.5%</td><td class="num">4.4x</td><td class="num">−0.03 pt</td></tr>
+<tr><th>룰</th><th>봉</th><th class="num">발동 빈도</th><th class="num">적중률 (±2봉)</th><th class="num">기저 대비 배수</th><th class="num">사후 15봉 평균</th></tr>
+<tr><td>변곡 상단</td><td>5m</td><td class="num">2.96%</td><td class="num pass">54.9%</td><td class="num">2.4×</td><td class="num">−0.78 pt</td></tr>
+<tr><td>변곡 하단</td><td>5m</td><td class="num">3.41%</td><td class="num pass">61.3%</td><td class="num">2.6×</td><td class="num">−0.10 pt</td></tr>
+<tr><td>상승 종료</td><td>5m</td><td class="num">2.02%</td><td class="num pass">52.9%</td><td class="num">4.2×</td><td class="num">−0.34 pt</td></tr>
+<tr><td>하락 종료</td><td>5m</td><td class="num">2.18%</td><td class="num pass">56.0%</td><td class="num">4.9×</td><td class="num">−1.08 pt</td></tr>
+<tr><td>변곡 상단</td><td>1m</td><td class="num">2.87%</td><td class="num pass">55.8%</td><td class="num">2.2×</td><td class="num">−0.08 pt</td></tr>
+<tr><td>변곡 하단</td><td>1m</td><td class="num">3.04%</td><td class="num pass">59.7%</td><td class="num">2.3×</td><td class="num">+0.00 pt</td></tr>
+<tr><td>상승 종료</td><td>1m</td><td class="num">1.97%</td><td class="num pass">56.7%</td><td class="num">4.1×</td><td class="num">−0.08 pt</td></tr>
+<tr><td>하락 종료</td><td>1m</td><td class="num">2.04%</td><td class="num pass">58.5%</td><td class="num">4.4×</td><td class="num">−0.03 pt</td></tr>
 </table>
-<div class="callout warn">8/8 hit rate ≥ 30% PASS. <strong>그러나 forward EV ≈ 0</strong> (단순 trigger entry 무수익). 룰은 detector 만, 진짜 edge 는 cell-level 에서.</div>
+<div class="callout warn">8/8 모두 적중률 ≥ 30% 통과. <strong>그러나 사후 평균 ≈ 0</strong> (단순 발동 진입은 무수익). 룰은 식별 도구일 뿐, 진짜 우위는 셀(cell) 단위 조건부 확률에서.</div>
 </section>
 
 <section id="r35">
-<h3>3.5 H5 OB Tier A — PARTIAL</h3>
+<h3>3.5 H5 오더블록 등급 A — 부분 통과</h3>
 <table>
-<tr><th>비교</th><th class="num">1m sharpe diff</th><th class="num">5m sharpe diff</th><th>양 TF</th></tr>
-<tr><td>Bull_A vs Bull_B (w15)</td><td class="num pass">+0.015</td><td class="num fail">−0.030</td><td class="partial">PARTIAL</td></tr>
-<tr><td>Bear_A vs Bear_B (w15)</td><td class="num pass">+0.024</td><td class="num pass">+0.038</td><td class="pass">PASS</td></tr>
+<tr><th>비교</th><th class="num">1분봉 샤프 차이</th><th class="num">5분봉 샤프 차이</th><th>양 봉 모두</th></tr>
+<tr><td>상승 OB 등급 A vs B (15봉)</td><td class="num pass">+0.015</td><td class="num fail">−0.030</td><td class="partial">부분</td></tr>
+<tr><td>하락 OB 등급 A vs B (15봉)</td><td class="num pass">+0.024</td><td class="num pass">+0.038</td><td class="pass">통과</td></tr>
 </table>
-<p><strong>Bear OB R42A Tier A 는 양 TF robust</strong>, Bull Tier A 는 1m 만 PASS. v3.4 "Bull R41A Sharpe 4.69" 는 <strong>ATM exit logic (60/30/2 BURN_X) 결합 효과</strong> 추정. path 자체엔 강한 edge 없음.</p>
+<p><strong>하락 오더블록 R42A 등급 A 는 양 봉 모두 견고</strong>, 상승 등급 A 는 1분봉만 통과. 기존 v3.4 의 "상승 R41A 샤프 4.69" 는 <strong>ATM 청산 룰(60/30/2 BURN_X) 결합 효과</strong> 로 추정. 가격 path 자체엔 강한 우위 없음.</p>
 </section>
 
 <section id="r36">
-<h3>3.6 Conditional Probability — 진짜 Edge ⭐</h3>
-<p>cell = <code>kind × KST_slot × atr_bin × pre_dir</code>. 5m 65 cells / 1m 71 cells (N≥30 기준).</p>
+<h3>3.6 조건부 확률 셀 — 진짜 우위 ⭐</h3>
+<p>셀 = <code>이벤트 종류 × KST 시간대 × ATR 구간 × 사전 방향</code>. 5분봉 65 셀 / 1분봉 71 셀 (N≥30 기준).</p>
 <table>
-<tr><th>TF</th><th class="num">cells</th><th class="num">HIGH EV (sharpe&gt;0.05)</th><th class="num">GO (V+drift≥25%)</th><th class="num">STOP</th><th class="num">BAD EV</th></tr>
+<tr><th>봉</th><th class="num">셀 수</th><th class="num">고기대값 (샤프&gt;0.05)</th><th class="num">진입 (V+추세 ≥25%)</th><th class="num">금지</th><th class="num">저기대값</th></tr>
 <tr><td>5m</td><td class="num">65</td><td class="num pass">60 (92%)</td><td class="num">1</td><td class="num">0</td><td class="num">0</td></tr>
 <tr><td>1m</td><td class="num">71</td><td class="num pass">69 (97%)</td><td class="num pass">11</td><td class="num">0</td><td class="num">1</td></tr>
 </table>
 
-<h4>TOP HIGH EV cells (5m, large N)</h4>
+<h4>고기대값 셀 상위 (5분봉, 표본 큰 것 위주)</h4>
 <table>
-<tr><th>kind</th><th>slot</th><th>atr</th><th>pre_dir</th><th class="num">N</th><th class="num">V+drift</th><th class="num">mean disp</th><th class="num">sharpe</th><th class="num">WR</th></tr>
-<tr><td>low</td><td>Other</td><td>low</td><td>down</td><td class="num">496</td><td class="num">26.0%</td><td class="num">+10.11 pt</td><td class="num hi">+0.556</td><td class="num hi">88.9%</td></tr>
-<tr><td>high</td><td>Other</td><td>low</td><td>up</td><td class="num">519</td><td class="num">23.9%</td><td class="num">+12.89 pt</td><td class="num hi">+0.447</td><td class="num">85.0%</td></tr>
-<tr><td>low</td><td>Asia_late</td><td>mid</td><td>down</td><td class="num">5,978</td><td class="num">13.8%</td><td class="num">+18.52 pt</td><td class="num hi">+0.412</td><td class="num">78.5%</td></tr>
-<tr><td>low</td><td>NY_open</td><td>mid</td><td>down</td><td class="num">242</td><td class="num">15.7%</td><td class="num">+24.80 pt</td><td class="num hi">+0.424</td><td class="num">75.6%</td></tr>
+<tr><th>종류</th><th>시간대</th><th>ATR</th><th>사전 방향</th><th class="num">N</th><th class="num">V+추세</th><th class="num">평균 변동</th><th class="num">샤프</th><th class="num">승률</th></tr>
+<tr><td>저점</td><td>기타</td><td>저</td><td>하락</td><td class="num">496</td><td class="num">26.0%</td><td class="num">+10.11 pt</td><td class="num hi">+0.556</td><td class="num hi">88.9%</td></tr>
+<tr><td>고점</td><td>기타</td><td>저</td><td>상승</td><td class="num">519</td><td class="num">23.9%</td><td class="num">+12.89 pt</td><td class="num hi">+0.447</td><td class="num">85.0%</td></tr>
+<tr><td>저점</td><td>아시아 후반</td><td>중</td><td>하락</td><td class="num">5,978</td><td class="num">13.8%</td><td class="num">+18.52 pt</td><td class="num hi">+0.412</td><td class="num">78.5%</td></tr>
+<tr><td>저점</td><td>NY 개장</td><td>중</td><td>하락</td><td class="num">242</td><td class="num">15.7%</td><td class="num">+24.80 pt</td><td class="num hi">+0.424</td><td class="num">75.6%</td></tr>
 </table>
 
-<h4>TOP GO cells (1m, V+drift ≥ 25%)</h4>
+<h4>진입 셀 상위 (1분봉, V+추세지속 ≥ 25%)</h4>
 <table>
-<tr><th>kind</th><th>slot</th><th>atr</th><th>pre_dir</th><th class="num">N</th><th class="num">V+drift</th><th class="num">mean disp</th><th class="num">sharpe</th><th class="num">WR</th></tr>
-<tr><td>low</td><td>Other</td><td>low</td><td>up</td><td class="num">67</td><td class="num hi">41.8%</td><td class="num">+1.22 pt</td><td class="num hi">+0.447</td><td class="num">67.2%</td></tr>
-<tr><td>high</td><td>Other</td><td>low</td><td>up</td><td class="num">1,884</td><td class="num">41.7%</td><td class="num">+2.85 pt</td><td class="num">+0.354</td><td class="num hi">78.7%</td></tr>
-<tr><td>low</td><td>Other</td><td>low</td><td>down</td><td class="num">1,761</td><td class="num">40.9%</td><td class="num">+2.44 pt</td><td class="num hi">+0.426</td><td class="num">77.8%</td></tr>
-<tr><td>high</td><td>NY_open</td><td>mid</td><td>up</td><td class="num">3,307</td><td class="num">15.4%</td><td class="num">+12.16 pt</td><td class="num hi">+0.449</td><td class="num">76.5%</td></tr>
+<tr><th>종류</th><th>시간대</th><th>ATR</th><th>사전 방향</th><th class="num">N</th><th class="num">V+추세</th><th class="num">평균 변동</th><th class="num">샤프</th><th class="num">승률</th></tr>
+<tr><td>저점</td><td>기타</td><td>저</td><td>상승</td><td class="num">67</td><td class="num hi">41.8%</td><td class="num">+1.22 pt</td><td class="num hi">+0.447</td><td class="num">67.2%</td></tr>
+<tr><td>고점</td><td>기타</td><td>저</td><td>상승</td><td class="num">1,884</td><td class="num">41.7%</td><td class="num">+2.85 pt</td><td class="num">+0.354</td><td class="num hi">78.7%</td></tr>
+<tr><td>저점</td><td>기타</td><td>저</td><td>하락</td><td class="num">1,761</td><td class="num">40.9%</td><td class="num">+2.44 pt</td><td class="num hi">+0.426</td><td class="num">77.8%</td></tr>
+<tr><td>고점</td><td>NY 개장</td><td>중</td><td>상승</td><td class="num">3,307</td><td class="num">15.4%</td><td class="num">+12.16 pt</td><td class="num hi">+0.449</td><td class="num">76.5%</td></tr>
 </table>
 
-<div class="callout success">변곡 + cell 결합 시 <strong>WR 75-89%, sharpe +0.3~0.6</strong>. 사용자 BURN_X 운용 경험의 데이터 입증.</div>
+<div class="callout success">변곡점 + 셀 결합 시 <strong>승률 75-89%, 샤프 +0.3~0.6</strong>. 사용자의 BURN_X 운용 경험이 데이터로 입증됨.</div>
 
 <div class="chart-wrap">
-<h4>5m TOP cell sharpe vs random baseline</h4>
+<h4>5분봉 상위 셀 샤프 vs 무작위 기저</h4>
 <div class="chart-canvas-wrap"><canvas id="cellChart"></canvas></div>
 </div>
 </section>
@@ -404,36 +404,36 @@ NQ 17.4년 1m+5m
 <section id="pine">
 <h2>4. Pine 룰 추출 (v5 후보)</h2>
 
-<h3>Pre-only event detector</h3>
-<pre><code><span class="c">// inflection_high — 상승 변곡 후보</span>
+<h3>사전 features 만으로 동작하는 이벤트 식별기</h3>
+<pre><code><span class="c">// 변곡 상단 — 상승 변곡 후보</span>
 inflection_high <span class="k">=</span>
     upper_wick <span class="k">&gt;</span> <span class="n">0.5</span> <span class="k">*</span> atr14 <span class="k">and</span>
     (close <span class="k">-</span> close[<span class="n">5</span>]) <span class="k">&gt;</span> <span class="n">0.8</span> <span class="k">*</span> atr14 <span class="k">and</span>
     stoch_k <span class="k">&gt;</span> <span class="n">65</span> <span class="k">and</span>
     bb_pctb <span class="k">&gt;</span> <span class="n">70</span>
 
-<span class="c">// inflection_low — 하락 변곡 후보</span>
+<span class="c">// 변곡 하단 — 하락 변곡 후보</span>
 inflection_low <span class="k">=</span>
     lower_wick <span class="k">&gt;</span> <span class="n">0.5</span> <span class="k">*</span> atr14 <span class="k">and</span>
     (close <span class="k">-</span> close[<span class="n">5</span>]) <span class="k">&lt;</span> <span class="k">-</span><span class="n">0.8</span> <span class="k">*</span> atr14 <span class="k">and</span>
     stoch_k <span class="k">&lt;</span> <span class="n">35</span> <span class="k">and</span>
     bb_pctb <span class="k">&lt;</span> <span class="n">30</span>
 
-<span class="c">// trend_end_high — 강상승 종료</span>
+<span class="c">// 강상승 종료</span>
 trend_end_high <span class="k">=</span>
     stoch_d <span class="k">&gt;</span> <span class="n">80</span> <span class="k">and</span>
     (close <span class="k">-</span> close[<span class="n">5</span>]) <span class="k">&gt;</span> <span class="n">1.5</span> <span class="k">*</span> atr14 <span class="k">and</span>
     upper_wick <span class="k">&gt;</span> <span class="n">0.4</span> <span class="k">*</span> atr14 <span class="k">and</span>
     (close <span class="k">-</span> ema20) <span class="k">&gt;</span> <span class="n">1.0</span> <span class="k">*</span> atr14
 
-<span class="c">// trend_end_low — 강하락 종료</span>
+<span class="c">// 강하락 종료</span>
 trend_end_low <span class="k">=</span>
     stoch_d <span class="k">&lt;</span> <span class="n">20</span> <span class="k">and</span>
     (close <span class="k">-</span> close[<span class="n">5</span>]) <span class="k">&lt;</span> <span class="k">-</span><span class="n">1.5</span> <span class="k">*</span> atr14 <span class="k">and</span>
     lower_wick <span class="k">&gt;</span> <span class="n">0.4</span> <span class="k">*</span> atr14 <span class="k">and</span>
     (close <span class="k">-</span> ema20) <span class="k">&lt;</span> <span class="k">-</span><span class="n">1.0</span> <span class="k">*</span> atr14</code></pre>
 
-<h3>Cell-based GO filter (실제 entry 신호)</h3>
+<h3>셀 단위 진입 필터 (실제 entry 신호)</h3>
 <pre><code>slot <span class="k">=</span>
     kst_hm <span class="k">&gt;=</span> <span class="n">1900</span> <span class="k">and</span> kst_hm <span class="k">&lt;</span> <span class="n">2100</span> <span class="k">?</span> <span class="s">"EU_late"</span> <span class="k">:</span>
     kst_hm <span class="k">&gt;=</span> <span class="n">2100</span> <span class="k">and</span> kst_hm <span class="k">&lt;</span> <span class="n">2230</span> <span class="k">?</span> <span class="s">"NY_pre_open"</span> <span class="k">:</span>
@@ -449,16 +449,16 @@ pre_dir <span class="k">=</span>
     pre_5_disp <span class="k">&gt;</span> <span class="n">0.3</span> <span class="k">*</span> atr14 <span class="k">?</span> <span class="s">"up"</span> <span class="k">:</span>
     pre_5_disp <span class="k">&lt;</span> <span class="k">-</span><span class="n">0.3</span> <span class="k">*</span> atr14 <span class="k">?</span> <span class="s">"down"</span> <span class="k">:</span> <span class="s">"flat"</span>
 
-<span class="c">// 진짜 GO (1m, top WR cells)</span>
+<span class="c">// 진입 신호 (1분봉, 승률 최고 셀)</span>
 go_long_high_wr <span class="k">=</span>
     kind <span class="k">==</span> <span class="s">"low"</span> <span class="k">and</span> slot <span class="k">==</span> <span class="s">"Other"</span> <span class="k">and</span>
     atr_bin <span class="k">==</span> <span class="s">"low"</span> <span class="k">and</span> pre_dir <span class="k">==</span> <span class="s">"down"</span>
-    <span class="c">// → V+drift 40.9%, WR 77.8%, sharpe +0.426 (N=1761)</span>
+    <span class="c">// → V+추세지속 40.9%, 승률 77.8%, 샤프 +0.426 (N=1761)</span>
 
 go_short_high_wr <span class="k">=</span>
     kind <span class="k">==</span> <span class="s">"high"</span> <span class="k">and</span> slot <span class="k">==</span> <span class="s">"Other"</span> <span class="k">and</span>
     atr_bin <span class="k">==</span> <span class="s">"low"</span> <span class="k">and</span> pre_dir <span class="k">==</span> <span class="s">"up"</span>
-    <span class="c">// → V+drift 41.7%, WR 78.7%, sharpe +0.354 (N=1884)</span></code></pre>
+    <span class="c">// → V+추세지속 41.7%, 승률 78.7%, 샤프 +0.354 (N=1884)</span></code></pre>
 </section>
 
 <section id="impl">
@@ -466,75 +466,75 @@ go_short_high_wr <span class="k">=</span>
 
 <table>
 <tr><th>능력</th><th class="num">정확도</th><th>비고</th></tr>
-<tr><td>변곡점 detection (실시간)</td><td class="num pass">AUC 0.875+ / precision@10% 89%+</td><td>GBM top-2 features</td></tr>
-<tr><td>Trend End 식별</td><td class="num pass">AUC 0.93+ / precision@10% 95%</td><td>더 명확한 fingerprint</td></tr>
-<tr><td>단순 룰 entry forward EV</td><td class="num fail">≈ 0</td><td>noise dominant — 단독 사용 X</td></tr>
-<tr><td>Cell-conditional WR</td><td class="num hi">75-89%</td><td>KST + atr + pre_dir 결합 필수</td></tr>
-<tr><td>OB Tier A (path only)</td><td class="num">sharpe +0.02~0.06</td><td>단독 marginal, ATM 결합 시 강화</td></tr>
+<tr><td>변곡점 식별 (실시간)</td><td class="num pass">AUC 0.875+ / 상위10% 정밀도 89%+</td><td>부스팅 상위 2개 features</td></tr>
+<tr><td>추세종료 식별</td><td class="num pass">AUC 0.93+ / 상위10% 정밀도 95%</td><td>특징이 더 명확</td></tr>
+<tr><td>단순 룰 진입의 사후 변동</td><td class="num fail">≈ 0</td><td>노이즈에 압도 — 단독 사용 불가</td></tr>
+<tr><td>셀 결합 시 승률</td><td class="num hi">75-89%</td><td>시간대 + ATR + 사전 방향 결합 필수</td></tr>
+<tr><td>오더블록 등급 A (path 만)</td><td class="num">샤프 +0.02~0.06</td><td>단독 미흡, ATM 결합 시 강화</td></tr>
 </table>
 
 <h3>운용 가이드</h3>
 <ol>
-<li><strong>변곡 식별만으로는 부족</strong> — 단순 룰 trigger 시 forward EV 0</li>
-<li><strong>반드시 cell-conditional 결합</strong> — KST slot × atr_bin × pre_dir 필터</li>
-<li><strong>TOP WR cell 우선</strong>: 1m <code>Other × low atr × pre_dir</code> 조합 (양방향) — WR 78%+</li>
-<li><strong>NY_open mid_atr</strong> — N 큼 (3K+), WR 76%, mean disp +12 pt — Sleep Pre-placement Golden Slot 데이터 입증</li>
-<li>단일 ML 모델 (GBM) 로 운용 가능 — sub-type 분리 불필요</li>
-<li>KST filter 시 trigger 1/4-1/6 줄지만 hit rate 4-5%p 향상 — 선택성 강화</li>
+<li><strong>변곡 식별만으로는 부족</strong> — 단순 룰 발동 시 사후 평균 변동 0</li>
+<li><strong>반드시 셀 단위 조건 결합</strong> — KST 시간대 × ATR 구간 × 사전 방향 필터</li>
+<li><strong>최고 승률 셀 우선</strong>: 1분봉 <code>기타 시간대 × 저ATR × 사전 방향</code> 조합 (양방향) — 승률 78%+</li>
+<li><strong>NY 개장 + 중ATR</strong> — 표본 큼 (3,000개+), 승률 76%, 평균 변동 +12 pt — 사용자가 알던 Sleep 사전 주문 골든슬롯의 데이터 입증</li>
+<li>단일 부스팅 모델로 운용 가능 — 하위 유형 분리 불필요</li>
+<li>KST 시간대 필터 적용 시 발동 1/4-1/6 줄지만 적중률 4-5%p 향상 — 선택성 강화</li>
 </ol>
 
 <h3>v3.4 / v3.5 룰 검증</h3>
 <ul>
-<li><b>Bull R41A "Sharpe 4.69"</b> — path-based 재현 안 됨. <strong>ATM 60/30/2 exit logic</strong> 의 영향이 핵심.</li>
-<li><b>Bear R42A "Sharpe 2.73"</b> — path-based 도 재현 (양 TF). 실제 edge 있음.</li>
-<li>결론: v3.4/v3.5 룰의 진짜 edge 는 <strong>ATM exit 결합 효과</strong>. ATM 룰 별도 검증 대상.</li>
+<li><b>상승 R41A "샤프 4.69"</b> — path 기반으로는 재현 안 됨. <strong>ATM 60/30/2 청산 룰</strong> 결합 효과가 핵심.</li>
+<li><b>하락 R42A "샤프 2.73"</b> — path 기반으로도 재현 (양 봉 모두). 실제 우위 있음.</li>
+<li>결론: v3.4/v3.5 룰의 진짜 우위는 <strong>ATM 청산 결합 효과</strong>. ATM 룰 별도 검증 대상.</li>
 </ul>
 </section>
 
 <section id="repro">
-<h2>6. Reproducibility</h2>
+<h2>6. 재현 가이드</h2>
 <pre><code>공부<span class="k">/</span>해외선물_나스닥_NQ<span class="k">/</span>research<span class="k">/</span>v4_path<span class="k">/</span>
-├── data_loader.py        <span class="c"># CSV → parquet</span>
-├── indicators.py         <span class="c"># EMA/ATR/Stoch/BB/RSI/MFI vectorized</span>
-├── pivots_fractal.py     <span class="c"># F (raw fractal)</span>
-├── pivots_legacy.py      <span class="c"># L (Pine 신호 5m+1m)</span>
-├── pivots_ob.py          <span class="c"># O (OB origin BOS)</span>
-├── path_metrics.py       <span class="c"># multi-window + classifier</span>
-├── regime.py             <span class="c"># BULL/BEAR/MIXED</span>
-├── events.py             <span class="c"># ZigZag + inflection + trend_end</span>
-├── profiler.py           <span class="c"># SR + bar shape + indicator snapshot</span>
-├── compare.py            <span class="c"># random baseline + Cohen's d</span>
-├── run_phase_3_1.py      <span class="c"># cross-TF consistency</span>
-├── run_phase_3_2.py      <span class="c"># Pre-only AUC LR+GBM</span>
-├── run_phase_3_3.py      <span class="c"># k-means cluster</span>
-├── run_phase_3_4.py      <span class="c"># Pine 룰 hit rate</span>
-└── run_phase_3_5_6.py    <span class="c"># Tier A H5 + Conditional probability</span></code></pre>
+├── data_loader.py        <span class="c"># CSV → parquet 변환</span>
+├── indicators.py         <span class="c"># EMA/ATR/스토캐스틱/볼린저/RSI/MFI 벡터화</span>
+├── pivots_fractal.py     <span class="c"># F (프랙탈)</span>
+├── pivots_legacy.py      <span class="c"># L (Pine 신호)</span>
+├── pivots_ob.py          <span class="c"># O (오더블록 BOS)</span>
+├── path_metrics.py       <span class="c"># 다중 윈도 + 모양 분류</span>
+├── regime.py             <span class="c"># 상승/하락/혼조</span>
+├── events.py             <span class="c"># 지그재그 + 변곡 + 추세종료</span>
+├── profiler.py           <span class="c"># 지지·저항 + 봉 모양 + 보조지표 캡처</span>
+├── compare.py            <span class="c"># 무작위 기저 + 효과 크기</span>
+├── run_phase_3_1.py      <span class="c"># 시간단위 일관성</span>
+├── run_phase_3_2.py      <span class="c"># 사전 AUC (로지스틱 + 부스팅)</span>
+├── run_phase_3_3.py      <span class="c"># k-means 군집</span>
+├── run_phase_3_4.py      <span class="c"># Pine 룰 적중률</span>
+└── run_phase_3_5_6.py    <span class="c"># 등급 A + 조건부 확률</span></code></pre>
 
 <h3>실행 순서</h3>
 <pre><code>cd 공부<span class="k">/</span>해외선물_나스닥_NQ<span class="k">/</span>research<span class="k">/</span>v4_path
-py <span class="k">-3.12</span> data_loader.py        <span class="c"># 1회 (parquet)</span>
-py <span class="k">-3.12</span> run_phase_3_1.py      <span class="c"># ~1 min</span>
-py <span class="k">-3.12</span> run_phase_3_2.py      <span class="c"># ~5 min</span>
-py <span class="k">-3.12</span> run_phase_3_3.py      <span class="c"># ~30 sec</span>
-py <span class="k">-3.12</span> run_phase_3_4.py      <span class="c"># ~3 min</span>
-py <span class="k">-3.12</span> run_phase_3_5_6.py    <span class="c"># ~3 min</span></code></pre>
-<p>환경: Python 3.12 / pandas 2.3.3 / numpy 2.4 / pyarrow 20.0 / sklearn 1.6 / Windows 11 (<code>PYTHONUTF8=1</code>)</p>
+py <span class="k">-3.12</span> data_loader.py        <span class="c"># 1회 (parquet 변환)</span>
+py <span class="k">-3.12</span> run_phase_3_1.py      <span class="c"># ~1 분</span>
+py <span class="k">-3.12</span> run_phase_3_2.py      <span class="c"># ~5 분</span>
+py <span class="k">-3.12</span> run_phase_3_3.py      <span class="c"># ~30 초</span>
+py <span class="k">-3.12</span> run_phase_3_4.py      <span class="c"># ~3 분</span>
+py <span class="k">-3.12</span> run_phase_3_5_6.py    <span class="c"># ~3 분</span></code></pre>
+<p>환경: Python 3.12 / pandas 2.3.3 / numpy 2.4 / pyarrow 20.0 / scikit-learn 1.6 / Windows 11 (<code>PYTHONUTF8=1</code>)</p>
 </section>
 
 <section id="caveats">
-<h2>7. Caveats / 한계</h2>
+<h2>7. 한계</h2>
 <ol>
-<li><strong>regime 정의 한계</strong> — EMA200 slope (24h) 가 too long-term, 모든 이벤트 regime 무차별. 단기 regime 재정의 가능성.</li>
-<li><strong>forward path noise</strong> — 시장 본질적 noise (50-55% 천장). 변곡 식별 ≠ EV 보장.</li>
-<li><strong>Cell N&lt;50 noisy</strong> — 보고된 cell 들 N≥50 만, 그 외 ~30% 결론 X.</li>
-<li><strong>시간 가중 미적용</strong> — 5y half-life decay plan 에 있었으나 분석은 flat. 최근 regime drift 영향 가능.</li>
-<li><strong>Tick data 미사용</strong> — Phase 2.6 NT8 tick 분석 deferred. 1m 내부 SL/TP 모호성 미측정.</li>
-<li><strong>Pine 룰 backtest 미실행</strong> — 실제 ATM/exit 결합 backtest 별도 단계.</li>
+<li><strong>장세 정의 한계</strong> — EMA200 24시간 기울기는 너무 장기 관점, 모든 이벤트가 장세 무차별. 단기 장세 재정의 가능성.</li>
+<li><strong>사후 path 노이즈</strong> — 시장 본질적 노이즈 (50-55% 천장). 변곡 식별 ≠ 기대값 보장.</li>
+<li><strong>셀 N&lt;50 표본 부족</strong> — 보고된 셀들 N≥50 만, 그 외 ~30%는 결론 보류.</li>
+<li><strong>시간 가중치 미적용</strong> — 5년 반감기 가중 계획에 있었으나 실제 분석은 균등. 최근 장세 변화 영향 가능.</li>
+<li><strong>Tick 데이터 미사용</strong> — Phase 2.6 NinjaTrader 틱 분석 보류. 1분봉 내부 SL/TP 모호성 미측정.</li>
+<li><strong>Pine 룰 백테스트 미실행</strong> — 실제 ATM/청산 결합 백테스트 별도 단계.</li>
 </ol>
 
 <footer>
-<p>v4_path 연구 — 2026-04-29 완료. <a href="https://github.com/GGobugiTheSquirtle/mnq-v4-path-research/blob/main/RESEARCH_REPORT.md">RESEARCH_REPORT.md</a> · <a href="https://github.com/GGobugiTheSquirtle/mnq-v4-path-research">Source on GitHub</a></p>
-<p>NQ E-mini Futures · 17.4년 (2008-12 ~ 2026-04) · 5,809,378 1m bars · FirstRateData</p>
+<p>v4_path 연구 — 2026-04-29 완료. <a href="https://github.com/GGobugiTheSquirtle/mnq-v4-path-research/blob/main/RESEARCH_REPORT.md">상세 보고서 (Markdown)</a> · <a href="https://github.com/GGobugiTheSquirtle/mnq-v4-path-research">소스 코드 (GitHub)</a></p>
+<p>NQ E-mini 선물 · 17.4년 (2008-12 ~ 2026-04) · 1분봉 5,809,378개 · FirstRateData</p>
 </footer>
 </section>
 
@@ -558,14 +558,14 @@ Chart.defaults.color = colors.fg;
 Chart.defaults.borderColor = colors.border;
 Chart.defaults.font.family = "-apple-system,BlinkMacSystemFont,'SF Pro KR','Segoe UI','Pretendard',sans-serif";
 
-// Phase 3.2 AUC chart
+// 3.2 사전 features AUC
 new Chart(document.getElementById('aucChart'), {
   type: 'bar',
   data: {
-    labels: ['inflection_high', 'inflection_low', 'trend_end_high', 'trend_end_low'],
+    labels: ['변곡 상단', '변곡 하단', '상승 종료', '하락 종료'],
     datasets: [
-      { label: '1m GBM', data: [0.877, 0.884, 0.937, 0.941], backgroundColor: colors.accent + '99' },
-      { label: '5m GBM', data: [0.875, 0.904, 0.934, 0.954], backgroundColor: colors.green + '99' },
+      { label: '1분봉 부스팅', data: [0.877, 0.884, 0.937, 0.941], backgroundColor: colors.accent + '99' },
+      { label: '5분봉 부스팅', data: [0.875, 0.904, 0.934, 0.954], backgroundColor: colors.green + '99' },
     ]
   },
   options: {
@@ -579,35 +579,35 @@ new Chart(document.getElementById('aucChart'), {
   }
 });
 
-// Feature importance (5m, all 4 events)
+// 특징 중요도 (5분봉, 4 이벤트)
 new Chart(document.getElementById('featChart'), {
   type: 'bar',
   data: {
-    labels: ['upper_wick', 'lower_wick', 'pre_5_disp', 'stoch_d', 'stoch_k', 'bb_pctb', 'dist_ll20', 'dist_hh20'],
+    labels: ['위꼬리', '아래꼬리', '사전5봉변동', '스토캐D', '스토캐K', '볼린저%B', '저점거리', '고점거리'],
     datasets: [
-      { label: 'inflection_high', data: [0.484, 0.000, 0.170, 0.000, 0.069, 0.000, 0.075, 0.000], backgroundColor: colors.accent + '99' },
-      { label: 'inflection_low',  data: [0.000, 0.479, 0.185, 0.000, 0.000, 0.000, 0.000, 0.085], backgroundColor: colors.green + '99' },
-      { label: 'trend_end_high',  data: [0.202, 0.000, 0.206, 0.455, 0.000, 0.000, 0.000, 0.037], backgroundColor: colors.orange + '99' },
-      { label: 'trend_end_low',   data: [0.000, 0.175, 0.297, 0.407, 0.000, 0.000, 0.000, 0.033], backgroundColor: colors.red + '99' },
+      { label: '변곡 상단', data: [0.484, 0.000, 0.170, 0.000, 0.069, 0.000, 0.075, 0.000], backgroundColor: colors.accent + '99' },
+      { label: '변곡 하단', data: [0.000, 0.479, 0.185, 0.000, 0.000, 0.000, 0.000, 0.085], backgroundColor: colors.green + '99' },
+      { label: '상승 종료', data: [0.202, 0.000, 0.206, 0.455, 0.000, 0.000, 0.000, 0.037], backgroundColor: colors.orange + '99' },
+      { label: '하락 종료', data: [0.000, 0.175, 0.297, 0.407, 0.000, 0.000, 0.000, 0.033], backgroundColor: colors.red + '99' },
     ]
   },
   options: {
     responsive: true, maintainAspectRatio: false,
     scales: {
-      y: { grid: { color: colors.border + '50' }, title: { display: true, text: 'GBM importance' } },
+      y: { grid: { color: colors.border + '50' }, title: { display: true, text: '부스팅 중요도' } },
       x: { grid: { display: false } },
     },
     plugins: { legend: { position: 'bottom' } }
   }
 });
 
-// Top cells sharpe
+// 상위 셀 샤프
 new Chart(document.getElementById('cellChart'), {
   type: 'bar',
   data: {
-    labels: ['low/Other/low/down', 'high/Other/low/up', 'low/Asia_late/mid/down', 'low/NY_open/mid/down', 'random baseline'],
+    labels: ['저점/기타/저ATR/하락', '고점/기타/저ATR/상승', '저점/아시아후반/중ATR/하락', '저점/NY개장/중ATR/하락', '무작위 기저'],
     datasets: [{
-      label: 'sharpe (per trade)',
+      label: '샤프 (거래당)',
       data: [0.556, 0.447, 0.412, 0.424, 0.0],
       backgroundColor: [colors.green + 'CC', colors.green + 'AA', colors.accent + 'CC', colors.accent + 'AA', colors.fgDim + '88'],
     }]
