@@ -143,6 +143,25 @@ code:not(pre code) {
 .metric .value { font-size: 28px; font-weight: 700; color: #f0f6fc; }
 .metric .delta { font-size: 12px; }
 .metric-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 16px 0; }
+.marker {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; font-size: 13px; line-height: 1; font-weight: 700;
+  border-radius: 3px;
+}
+.marker.tri-up::before { content: "▲"; }
+.marker.tri-dn::before { content: "▼"; }
+.marker.diamond::before { content: "◆"; }
+.marker.circle::before { content: "●"; }
+.marker.flag::before { content: "▮"; }
+.marker.x::before { content: "✕"; }
+.marker.line { width: 24px; height: 0; border-top-style: solid; }
+.marker.line.thin { border-top-width: 1px; }
+.marker.line.mid { border-top-width: 2px; }
+.marker.line.thick { border-top-width: 3px; }
+.marker.box { width: 28px; height: 16px; border: 1px solid; }
+.indicator-card { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 18px 22px; margin: 16px 0; }
+.indicator-card h4 { margin: 0 0 8px; color: var(--accent); }
+.indicator-card .file-tag { font-family: ui-monospace, monospace; font-size: 12px; color: var(--fg-dim); margin: 0 0 14px; }
 .chart-wrap { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 18px; margin: 18px 0; }
 .chart-wrap h4 { margin: 0 0 12px; }
 .chart-canvas-wrap { position: relative; height: 280px; width: 100%; }
@@ -178,9 +197,10 @@ footer {
 <li class="sub"><a href="#r35">3.5 등급 A</a></li>
 <li class="sub"><a href="#r36">3.6 셀 ⭐</a></li>
 <li><a href="#pine">4. Pine 룰</a></li>
-<li><a href="#impl">5. 거래 함의</a></li>
-<li><a href="#repro">6. 재현 가이드</a></li>
-<li><a href="#caveats">7. 한계</a></li>
+<li><a href="#markers">5. 차트 표시 가이드 ⭐</a></li>
+<li><a href="#impl">6. 거래 함의</a></li>
+<li><a href="#repro">7. 재현 가이드</a></li>
+<li><a href="#caveats">8. 한계</a></li>
 </ul>
 <div class="meta">
 v4_path 연구<br>
@@ -461,8 +481,239 @@ go_short_high_wr <span class="k">=</span>
     <span class="c">// → V+추세지속 41.7%, 승률 78.7%, 샤프 +0.354 (N=1884)</span></code></pre>
 </section>
 
+<section id="markers">
+<h2>5. 차트 표시 가이드 (각 마커 의미·수치)</h2>
+
+<p>이 연구로 도출한 Pine 인디케이터 5종 의 모든 시각 마커를 한곳에 정리. 각 마커는 <strong>의미 + 발동 임계값(수치) + 연구 기반 신뢰도</strong> 함께 표기. 차트에 띄울 때 마커가 무엇을 뜻하는지 즉시 확인 가능.</p>
+
+<div class="callout">
+파일 셋업: 5분봉/1분봉 차트 모두 — <code>Common_v4</code> + <code>OBFVG_R4_v1</code> + (해당 TF 의 <code>5m_v4</code> 또는 <code>1m_v4</code>) + <code>v5_Fingerprint</code>.<br>
+공통 룰: 큰 라벨(텍스트 박힘) 금지 / EMA 는 Common 만 그림 / HUD 는 Common 메인 + 다른 indicator 는 마이크로.
+</div>
+
+<!-- ─────────────── 5.1 Common ─────────────── -->
+<div class="indicator-card">
+<h4>5.1 공통 환경 (MNQ_Common_v4)</h4>
+<p class="file-tag">파일: <code>MNQ_Common_v4.pine</code> · 역할: EMA / VWAP / 세션 박스 / 메인 HUD</p>
+<table>
+<tr><th>마커</th><th>색상·두께</th><th>의미</th><th>수치·기간</th></tr>
+<tr><td><span class="marker line thick" style="border-top-color:#ffffff"></span> EMA20</td><td>흰색 굵 (3px)</td><td>단기 추세선 — 가격이 위 = 단기 강세</td><td>20봉 지수이동평균</td></tr>
+<tr><td><span class="marker line mid" style="border-top-color:#f0883e"></span> EMA50</td><td>주황 중 (2px)</td><td>중기 추세선 — EMA20 과 정렬 시 추세 일치</td><td>50봉</td></tr>
+<tr><td><span class="marker line thin" style="border-top-color:#f85149"></span> EMA200</td><td>빨강 얇 (1px)</td><td>장기 추세선 — 위/아래 = 장세 (BULL/BEAR) 기준</td><td>200봉</td></tr>
+<tr><td><span class="marker line thin" style="border-top-color:#5cb6c7"></span> VWAP</td><td>청록 stepline</td><td>거래량 가중 평균가 — 일중 평형점</td><td>일별 누적 (HLC3)</td></tr>
+<tr><td><span class="marker box" style="border-color:#845ef7;background:#845ef722"></span> 아시아 세션</td><td>보라 박스</td><td>야간 거래시간 (한국 보통 새벽)</td><td>ET 18:00-03:00 = KST 08:00-17:00</td></tr>
+<tr><td><span class="marker box" style="border-color:#f59e0b;background:#f59e0b22"></span> 런던 세션</td><td>주황 박스</td><td>유럽 개장</td><td>ET 03:00-08:00 = KST 17:00-22:00</td></tr>
+<tr><td><span class="marker box" style="border-color:#06b6d4;background:#06b6d422"></span> 미국 세션</td><td>청록 박스</td><td>NY 개장 + 정규장</td><td>ET 08:00-16:00 = KST 22:00-06:00</td></tr>
+</table>
+<p><b>HUD 4행</b>: 현재 KST 시간 / 현재 세션 / EMA 정렬 (UP↑ DOWN↓ MIXED) / 변동성 구간 (LOW/MED/HIGH = BB폭 &lt;0.12 / &lt;0.25 / 그 외).</p>
+</div>
+
+<!-- ─────────────── 5.2 v5 Fingerprint ─────────────── -->
+<div class="indicator-card">
+<h4>5.2 변곡·추세종료 식별 (v5 Fingerprint) ⭐ 본 연구 결과</h4>
+<p class="file-tag">파일: <code>MNQ_v5_Fingerprint.pine</code> · 역할: 변곡 detector + 셀 기반 GO 진입 신호</p>
+<table>
+<tr><th>마커</th><th>색상·위치</th><th>의미</th><th>수치 (모두 충족 시 발동)</th></tr>
+<tr>
+<td><span class="marker tri-dn" style="color:#f0883e"></span> 변곡 상단</td>
+<td>주황 ▼ · 위</td>
+<td>상승 후 반전 후보 (위로 더 가지 않을 가능성 높음)</td>
+<td>위꼬리 &gt; 0.5×ATR · 사전 5봉 +0.8×ATR · 스토캐K &gt; 65 · BB%B &gt; 70</td>
+</tr>
+<tr>
+<td><span class="marker tri-up" style="color:#5cb6c7"></span> 변곡 하단</td>
+<td>청록 ▲ · 아래</td>
+<td>하락 후 반전 후보 (아래로 더 가지 않을 가능성 높음)</td>
+<td>아래꼬리 &gt; 0.5×ATR · 사전 5봉 -0.8×ATR · 스토캐K &lt; 35 · BB%B &lt; 30</td>
+</tr>
+<tr>
+<td><span class="marker diamond" style="color:#f85149"></span> 강한 상승 종료</td>
+<td>빨강 ◆ · 위</td>
+<td>강한 상승 추세 끝 후보 — 더 명확한 fingerprint (AUC 0.93+)</td>
+<td>스토캐D &gt; 80 · 사전 5봉 +1.5×ATR · 위꼬리 &gt; 0.4×ATR · close-EMA20 &gt; 1.0×ATR</td>
+</tr>
+<tr>
+<td><span class="marker diamond" style="color:#3fb950"></span> 강한 하락 종료</td>
+<td>초록 ◆ · 아래</td>
+<td>강한 하락 추세 끝 후보</td>
+<td>스토캐D &lt; 20 · 사전 5봉 -1.5×ATR · 아래꼬리 &gt; 0.4×ATR · close-EMA20 &lt; -1.0×ATR</td>
+</tr>
+<tr>
+<td><span class="marker tri-up hi" style="color:#3fb950"></span> GO LONG</td>
+<td>초록 ▲ (살짝 큼) · 아래</td>
+<td><b>실제 진입 신호</b> — 변곡/추세종료 + 셀 일치</td>
+<td>변곡·추세종료 하단 발동 AND 셀 = 기타시간/저ATR/사전하락 → 연구 <b>승률 77.8% / 샤프 +0.426 / N=1761</b></td>
+</tr>
+<tr>
+<td><span class="marker tri-dn hi" style="color:#f85149"></span> GO SHORT</td>
+<td>빨강 ▼ (살짝 큼) · 위</td>
+<td><b>실제 진입 신호</b> — 변곡/추세종료 + 셀 일치</td>
+<td>변곡·추세종료 상단 발동 AND 셀 = 기타시간/저ATR/사전상승 → 연구 <b>승률 78.7% / 샤프 +0.354 / N=1884</b></td>
+</tr>
+</table>
+<p><b>HUD 3행</b> (오른쪽 아래): 현재 셀 (시간대·ATR구간·사전방향) / 마지막 detector 활성 / GO 상태. 셀이 GO 조건 일치 시 셀 행 텍스트가 초록으로 변함.</p>
+<div class="callout">
+변곡·추세종료 detector 자체 발동만으로는 <strong>사후 평균 변동 ≈ 0</strong> (단순 진입 무수익). <strong>GO ▲▼ 만 실제 진입 신호</strong> — 셀 일치 시에만 발동.
+</div>
+</div>
+
+<!-- ─────────────── 5.3 OBFVG ─────────────── -->
+<div class="indicator-card">
+<h4>5.3 오더블록 + FVG (OBFVG R4)</h4>
+<p class="file-tag">파일: <code>MNQ_OBFVG_R4_v1.pine</code> · 역할: BOS 기반 OB 진입 (5분 Bull / 1분 Bear)</p>
+<table>
+<tr><th>마커</th><th>색상·위치</th><th>의미</th><th>수치 (BOS 확정 룰)</th></tr>
+<tr>
+<td><span class="marker box" style="border-color:#3fb950;background:#3fb95022"></span> Bull OB 박스</td>
+<td>초록 채움</td>
+<td>상승 OB 영역 (재터치 시 매수 진입)</td>
+<td>음봉(원 origin)에서 close &gt; 직전 10봉 swing high (확정 3봉 후) AND HTF 4시간 상승 bias · KST 21:00-01:45 만</td>
+</tr>
+<tr>
+<td><span class="marker box" style="border-color:#f85149;background:#f8514922"></span> Bear OB 박스</td>
+<td>빨강 채움</td>
+<td>하락 OB 영역 (재터치 시 매도 진입)</td>
+<td>양봉(원 origin)에서 close &lt; 직전 10봉 swing low AND HTF 1시간 하락 bias · 시간 동일</td>
+</tr>
+<tr>
+<td><span class="marker circle" style="color:#3fb950"></span> Bull 진입 ○ (Tier A)</td>
+<td>밝은 초록 · 큰 ○</td>
+<td>OB 재터치 + 강한 fingerprint (큰 표시)</td>
+<td>OB zone 진입 + KST 21:00-22:30 슬롯 + ATR 비율 ≥ 1.3 → <b>연구 Sharpe 4.69 (단, ATM 청산 결합 효과 추정)</b></td>
+</tr>
+<tr>
+<td><span class="marker circle" style="color:#3fb950;opacity:0.5"></span> Bull 진입 ○ (Tier B)</td>
+<td>흐린 초록 · 작은 ○</td>
+<td>OB 재터치 baseline (default OFF)</td>
+<td>위 외 — Sharpe 3.03 baseline. <code>show_tier_b_lbl=true</code> 켜야 보임</td>
+</tr>
+<tr>
+<td><span class="marker circle" style="color:#f85149"></span> Bear 진입 ○ (Tier A)</td>
+<td>밝은 빨강 · 큰 ○</td>
+<td>OB 재터치 강한 fingerprint</td>
+<td>OB zone + KST 22:30-23:00 (NY 개장) + ATR 비율 ≥ 1.0 → <b>Sharpe 2.73 (path 자체 검증됨)</b></td>
+</tr>
+<tr>
+<td><span class="marker line thin" style="border-top-color:#ff0;border-top-style:dashed"></span> 진입 가격선</td>
+<td>노랑 점선</td>
+<td>(tooltip) 권장 진입가 (OB 중간)</td>
+<td>(ob_low + ob_high) / 2</td>
+</tr>
+<tr>
+<td><span class="marker line thin" style="border-top-color:#f85149;border-top-style:dashed"></span> SL 선</td>
+<td>빨강 점선</td>
+<td>손절 가격</td>
+<td>Bull: ob_low − 0.5×ATR · Bear: ob_high + 0.5×ATR</td>
+</tr>
+<tr>
+<td><span class="marker line thin" style="border-top-color:#3fb950;border-top-style:dashed"></span> TP 선</td>
+<td>초록 점선</td>
+<td>익절 가격</td>
+<td>진입 ± 3.0×ATR · RR 약 6:1</td>
+</tr>
+<tr>
+<td><span class="marker x" style="color:#f0883e"></span> Time-stop</td>
+<td>주황 ✕</td>
+<td>시간 만료 — 포지션 검토 alert</td>
+<td>5m Bull: 100분 (20봉) · 1m Bear: 50분 (50봉) · 옵션 30분 cap</td>
+</tr>
+</table>
+<p><b>마이크로 HUD 2행</b>: Bull OB 상태 (B-ARMED / B-USED / -) · Bear OB 상태. ARMED = 발동 대기, USED = 이미 진입.</p>
+</div>
+
+<!-- ─────────────── 5.4 5m_v4 ─────────────── -->
+<div class="indicator-card">
+<h4>5.4 5분봉 검증 신호 (5m_v4)</h4>
+<p class="file-tag">파일: <code>MNQ_5m_v4.pine</code> · 역할: L3·S2 등급 신호 + 보조 (L2·L4·S3)</p>
+<table>
+<tr><th>마커</th><th>색상·위치</th><th>의미</th><th>수치</th></tr>
+<tr>
+<td><span class="marker tri-up" style="color:#3fb950"></span> L3 Tier A</td>
+<td>밝은 초록 ▲ · 아래</td>
+<td>최강 매수 신호 (검증 ⭐⭐⭐)</td>
+<td>스토캐K&lt;20 + K↑D 골든크로스 + close-EMA20 &lt;0.20% + EMA UP 정렬 + ATR 비율 ≥ 1.0 → 연구 Sharpe 4.10</td>
+</tr>
+<tr>
+<td><span class="marker tri-up" style="color:#3fb950;opacity:0.5"></span> L3 Tier B</td>
+<td>흐린 초록 ▲ (작음) · 아래</td>
+<td>baseline 매수 (default OFF)</td>
+<td>위 조건 + ATR 비율 &lt; 1.0 → Sharpe 2.84</td>
+</tr>
+<tr>
+<td><span class="marker tri-dn" style="color:#f85149"></span> S2 Tier A</td>
+<td>밝은 빨강 ▼ · 위</td>
+<td>최강 매도 신호 (검증 ⭐⭐⭐)</td>
+<td>스토캐K&gt;80 + K↓D 데드크로스 + close-EMA20 &lt;0.20% + EMA DOWN + 세션 + 변동성 != MED + ATR 비율 ≥ 1.0 + Regime ≠ MIXED → Sharpe 4.43</td>
+</tr>
+<tr>
+<td><span class="marker tri-dn" style="color:#f85149;opacity:0.5"></span> S2 Tier B</td>
+<td>흐린 빨강 ▼ (작음) · 위</td>
+<td>baseline 매도 (default OFF)</td>
+<td>위 외 → Sharpe 2.50</td>
+</tr>
+<tr>
+<td><span class="marker tri-up" style="color:#5cb6c7"></span> L2 BB</td>
+<td>청록 ▲ · 아래</td>
+<td>경계 매수 — BB 하단 터치</td>
+<td>BB %B &lt; 10 + EMA UP + 세션</td>
+</tr>
+<tr>
+<td><span class="marker tri-up" style="color:#58a6ff"></span> L4 CCI</td>
+<td>파랑 ▲ · 아래</td>
+<td>경계 매수 — CCI 강한 과매도</td>
+<td>CCI20 &lt; −100 + EMA UP + 세션</td>
+</tr>
+<tr>
+<td><span class="marker x" style="color:#f0883e"></span> S3 BB@22:30</td>
+<td>주황 ✕ · 위</td>
+<td>NY 개장 직후 BB 상단 reversion</td>
+<td>BB %B &gt; 90 + EMA DOWN + KST 22:30-22:45</td>
+</tr>
+</table>
+<p><b>L3 목요일 차단</b>: KST 목요일 종일 L3 신호 발동 안 함 (연구 Sharpe -0.75 음수). HUD 에 "THU" 표시.</p>
+<p><b>마이크로 HUD 2행</b>: L3 상태 (FIRE A / fire B / THU / -) · S2 상태 (FIRE A / fire B / BLK = MED 변동성 차단 / -).</p>
+</div>
+
+<!-- ─────────────── 5.5 1m_v4 ─────────────── -->
+<div class="indicator-card">
+<h4>5.5 1분봉 BURN_X 스파이크 (1m_v4)</h4>
+<p class="file-tag">파일: <code>MNQ_1m_v4.pine</code> · 역할: 단기 강한 스파이크 detector (사용자 실전 검증)</p>
+<table>
+<tr><th>마커</th><th>색상·위치</th><th>의미</th><th>수치 (5종 중 1개 만족 + 쿨다운 10봉)</th></tr>
+<tr>
+<td><span class="marker tri-up" style="color:#f85149"></span> BURN_X Long</td>
+<td>빨강 ▲ · 아래</td>
+<td>급등 스파이크 발생</td>
+<td>(1) 거래량 z &gt; 1.5 + 양봉 OR (2) 5봉 중 4봉 양봉 OR (3) close &gt; 직전 20봉 고점 + 5봉 range &gt; 2×ATR OR (4) 아래꼬리 &gt; 몸통×2 + 양봉 OR (5) KST 22:30 RTH 개장 첫 봉</td>
+</tr>
+<tr>
+<td><span class="marker tri-dn" style="color:#f85149"></span> BURN_X Short</td>
+<td>빨강 ▼ · 위</td>
+<td>급락 스파이크 발생</td>
+<td>(1) 거래량 z &gt; 1.5 + 음봉 OR (2) 5봉 중 4봉 음봉 OR (3) close &lt; 직전 20봉 저점 + 5봉 range &gt; 2×ATR OR (4) 위꼬리 &gt; 몸통×2 + 음봉</td>
+</tr>
+<tr>
+<td><span class="marker diamond" style="color:#d29922"></span> RTH 개장</td>
+<td>노랑 ◆ · 위</td>
+<td>NY 정규장 시작 첫 봉</td>
+<td>KST 22:30 (= ET 09:30) 첫 1분봉</td>
+</tr>
+</table>
+<p><b>마이크로 HUD 2행</b>: BURN_X 마지막 발생 종류 (▲ VOL↑ / ▼ MOM↓ / WICK↑ / RTH 등) · 거래량 z (vol_z &gt; 1.5 빨강, &gt; 1.0 노랑, 그 외 회색).</p>
+<div class="callout success">사용자 실전 검증: 백테스트는 NOGO 였으나 사용자 운용에서 "잘 맞음" 보고 → 측정법 결함 가설로 보존. v5 셀 GO 필터와 결합 시 진짜 edge.</div>
+</div>
+
+<h3>5.6 차트 셋업 요약</h3>
+<table>
+<tr><th>차트 TF</th><th>활성 indicator</th><th>주력 신호</th></tr>
+<tr><td><b>5분봉</b></td><td>Common_v4 + OBFVG_R4 + 5m_v4 + v5_Fingerprint</td><td>L3/S2 Tier A · Bull OB Tier A · v5 GO ▲▼</td></tr>
+<tr><td><b>1분봉</b></td><td>Common_v4 + OBFVG_R4 + 1m_v4 + v5_Fingerprint</td><td>BURN_X 스파이크 · Bear OB Tier A · v5 GO ▲▼</td></tr>
+</table>
+<p>모든 indicator 가 같은 EMA·VWAP·세션 박스를 공유 (Common 단일). 신호는 각 파일 별 작은 plotshape 으로만 — 큰 라벨/배경 노이즈 없음. HUD 는 Common 의 메인 4행 + 각 indicator 의 마이크로 2-3행.</p>
+</section>
+
 <section id="impl">
-<h2>5. 거래 함의</h2>
+<h2>6. 거래 함의</h2>
 
 <table>
 <tr><th>능력</th><th class="num">정확도</th><th>비고</th></tr>
@@ -492,7 +743,7 @@ go_short_high_wr <span class="k">=</span>
 </section>
 
 <section id="repro">
-<h2>6. 재현 가이드</h2>
+<h2>7. 재현 가이드</h2>
 <pre><code>공부<span class="k">/</span>해외선물_나스닥_NQ<span class="k">/</span>research<span class="k">/</span>v4_path<span class="k">/</span>
 ├── data_loader.py        <span class="c"># CSV → parquet 변환</span>
 ├── indicators.py         <span class="c"># EMA/ATR/스토캐스틱/볼린저/RSI/MFI 벡터화</span>
@@ -522,7 +773,7 @@ py <span class="k">-3.12</span> run_phase_3_5_6.py    <span class="c"># ~3 분</
 </section>
 
 <section id="caveats">
-<h2>7. 한계</h2>
+<h2>8. 한계</h2>
 <ol>
 <li><strong>장세 정의 한계</strong> — EMA200 24시간 기울기는 너무 장기 관점, 모든 이벤트가 장세 무차별. 단기 장세 재정의 가능성.</li>
 <li><strong>사후 path 노이즈</strong> — 시장 본질적 노이즈 (50-55% 천장). 변곡 식별 ≠ 기대값 보장.</li>
