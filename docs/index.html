@@ -145,6 +145,9 @@ code:not(pre code) {
 .metric-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin: 16px 0; }
 .chart-wrap { background: var(--bg-2); border: 1px solid var(--border); border-radius: 8px; padding: 18px; margin: 18px 0; }
 .chart-wrap h4 { margin: 0 0 12px; }
+.chart-canvas-wrap { position: relative; height: 280px; width: 100%; }
+.chart-canvas-wrap.chart-tall { height: 360px; }
+.chart-canvas-wrap > canvas { position: absolute; left: 0; top: 0; width: 100% !important; height: 100% !important; }
 @media (max-width: 900px) {
   .layout { grid-template-columns: 1fr; }
   nav.toc { position: static; height: auto; border-right: none; border-bottom: 1px solid var(--border); }
@@ -208,7 +211,7 @@ NQ 17.4년 1m+5m
 
 <div class="chart-wrap">
 <h4>Phase 3.2 Pre-only AUC (OOS 12개월)</h4>
-<canvas id="aucChart" height="100"></canvas>
+<div class="chart-canvas-wrap"><canvas id="aucChart"></canvas></div>
 </div>
 </section>
 
@@ -310,7 +313,7 @@ NQ 17.4년 1m+5m
 
 <div class="chart-wrap">
 <h4>Top features (GBM importance, 5m)</h4>
-<canvas id="featChart" height="180"></canvas>
+<div class="chart-canvas-wrap chart-tall"><canvas id="featChart"></canvas></div>
 </div>
 
 <table>
@@ -393,7 +396,7 @@ NQ 17.4년 1m+5m
 
 <div class="chart-wrap">
 <h4>5m TOP cell sharpe vs random baseline</h4>
-<canvas id="cellChart" height="160"></canvas>
+<div class="chart-canvas-wrap"><canvas id="cellChart"></canvas></div>
 </div>
 </section>
 </section>
