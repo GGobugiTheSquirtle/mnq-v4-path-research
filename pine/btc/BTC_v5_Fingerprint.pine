@@ -1,0 +1,275 @@
+//@version=6
+// ============================================================================
+// BTC v5 Fingerprint — 변곡점·추세종료 식별 + 셀 GO 필터 (BTC 적응)
+// ============================================================================
+// 출처: NQ v5_Fingerprint 의 BTC 적응
+//   v4_btc 연구 결과: https://ggobugithesquirtle.github.io/mnq-v4-path-research/btc/
+//
+// 적응 (NQ → BTC):
+//   - 24/7 거래 (session_active 필터 제거)
+//   - KST 23시 hot spot (NY 10시) — NQ 의 21시와 다름
+//   - 거래량 시그널 가중 (vol_z, rvol) — BTC 에선 NQ 보다 importance 높음
+//   - 4 TF 호환 (5m / 15m / 1h / 4h)
+//
+// 4 detector (룰 동일 — asset-independent):
+//   inflection_high : 위꼬리 + 사전 5봉 +0.8×ATR + 스토캐K>65 + BB%B>70
+//   inflection_low  : 아래꼬리 + 사전 5봉 -0.8×ATR + 스토캐K<35 + BB%B<30
+//   trend_end_high  : 스토캐D>80 + 사전 5봉 +1.5×ATR + 위꼬리 + EMA20 위 1.0×ATR
+//   trend_end_low   : 스토캐D<20 + 사전 5봉 -1.5×ATR + 아래꼬리 + EMA20 아래 1.0×ATR
+//
+// BTC 셀 GO 필터 (연구 TOP cells, 5m 기준):
+//   GO LONG   : kind=low + slot=Other + atr_bin=low + pre_dir=down
+//               → 샤프 +0.775, 승률 83.6%, N=134 (ATR 정규화 변동 +2.60)
+//   GO SHORT  : kind=high + slot=Other + atr_bin=low + pre_dir=up
+//               → V+drift 27.6% 통과, 샤프 +0.487, 승률 81.9%, N=105
+//
+// 거래량 가중 (BTC 특화):
+//   vol_boost = vol_z > 1.0 또는 rvol > 1.5 — detector 에 별도 vol marker 추가
+// ============================================================================
+
+indicator("BTC v5 Fingerprint", overlay=true, max_labels_count=200, max_lines_count=10)
+
+// ════════════════════════════════════════════════════════════════════════════
+// 0. INPUTS
+// ════════════════════════════════════════════════════════════════════════════
+
+grp_show          = "1. 표시"
+i_show_inflect    = input.bool(true,  "변곡 detector (▲▼)",        group=grp_show)
+i_show_trend_end  = input.bool(true,  "추세종료 detector (◆)",     group=grp_show)
+i_show_go         = input.bool(true,  "셀 GO 진입 신호 (▲▼)",      group=grp_show)
+i_show_vol_boost  = input.bool(true,  "거래량 가중 마커 (★)",       group=grp_show,
+                     tooltip="vol_z>1.0 또는 rvol>1.5 시 detector 위/아래에 ★ 추가")
+i_show_hud        = input.bool(true,  "마이크로 HUD (현재 셀)",     group=grp_show)
+i_alert_go_only   = input.bool(true,  "alert: GO 셀만",             group=grp_show)
+
+grp_thresh        = "2. 임계값 (연구 default)"
+i_wick_min        = input.float(0.5,  "위/아래꼬리 min ×ATR",       step=0.1, group=grp_thresh)
+i_pre5_inflect    = input.float(0.8,  "사전 5봉 min ×ATR (변곡)",   step=0.1, group=grp_thresh)
+i_pre5_trend_end  = input.float(1.5,  "사전 5봉 min ×ATR (추세종료)", step=0.1, group=grp_thresh)
+i_dist_ema20      = input.float(1.0,  "EMA20 거리 min ×ATR (추세종료)", step=0.1, group=grp_thresh)
+i_pre_dir_min     = input.float(0.3,  "사전 방향 분류 min ×ATR",    step=0.1, group=grp_thresh)
+i_atr_bin_lo      = input.float(0.8,  "ATR 구간 저-중 경계",         step=0.1, group=grp_thresh)
+i_atr_bin_hi      = input.float(1.2,  "ATR 구간 중-고 경계",         step=0.1, group=grp_thresh)
+
+grp_vol           = "3. 거래량 가중 (BTC 특화)"
+i_volz_boost      = input.float(1.0,  "vol_z 가중 임계",            step=0.1, group=grp_vol)
+i_rvol_boost      = input.float(1.5,  "rvol 가중 임계",             step=0.1, group=grp_vol)
+i_rvol_length     = input.int(288,    "RVOL 윈도 (24h 기준)",       group=grp_vol,
+                     tooltip="5m=288, 15m=96, 1h=24, 4h=6 — TF 별 자동 변경 권장")
+
+// ════════════════════════════════════════════════════════════════════════════
+// 1. INDICATORS
+// ════════════════════════════════════════════════════════════════════════════
+
+ema20_v5 = ta.ema(close, 20)
+
+atr14_v5 = ta.atr(14)
+atr_sma20_v5 = ta.sma(atr14_v5, 20)
+atr_ratio_v5 = atr_sma20_v5 > 0.0001 ? atr14_v5 / atr_sma20_v5 : 0.0
+
+stoch_k_v5 = ta.stoch(close, high, low, 14)
+stoch_d_v5 = ta.sma(stoch_k_v5, 3)
+
+ma20_v5 = ta.sma(close, 20)
+sd20_v5 = ta.stdev(close, 20)
+bb_up_v5 = ma20_v5 + 2 * sd20_v5
+bb_lo_v5 = ma20_v5 - 2 * sd20_v5
+bb_pctb_v5 = bb_up_v5 != bb_lo_v5 ? (close - bb_lo_v5) / (bb_up_v5 - bb_lo_v5) * 100 : 50
+
+// 봉 모양
+upper_wick_v5 = high - math.max(close, open)
+lower_wick_v5 = math.min(close, open) - low
+
+// 사전 5봉 변동
+pre5_disp_v5 = close - close[5]
+
+// 거래량 시그널 (BTC 특화)
+v_ma_v5  = ta.sma(volume, 20)
+v_std_v5 = ta.stdev(volume, 20)
+vol_z_v5 = v_std_v5 > 0 ? (volume - v_ma_v5) / v_std_v5 : 0.0
+rvol_ma_v5 = ta.sma(volume, i_rvol_length)
+rvol_v5 = rvol_ma_v5 > 0 ? volume / rvol_ma_v5 : 1.0
+
+vol_boost = vol_z_v5 > i_volz_boost or rvol_v5 > i_rvol_boost
+
+// ════════════════════════════════════════════════════════════════════════════
+// 2. DETECTOR (4종, NQ 와 동일 룰)
+// ════════════════════════════════════════════════════════════════════════════
+
+inflection_high_v5 = (
+    upper_wick_v5 > i_wick_min     * atr14_v5 and
+    pre5_disp_v5  > i_pre5_inflect * atr14_v5 and
+    stoch_k_v5    > 65 and
+    bb_pctb_v5    > 70)
+
+inflection_low_v5 = (
+    lower_wick_v5 > i_wick_min      * atr14_v5 and
+    pre5_disp_v5  < -i_pre5_inflect * atr14_v5 and
+    stoch_k_v5    < 35 and
+    bb_pctb_v5    < 30)
+
+trend_end_high_v5 = (
+    stoch_d_v5 > 80 and
+    pre5_disp_v5 > i_pre5_trend_end  * atr14_v5 and
+    upper_wick_v5 > 0.4 * atr14_v5 and
+    (close - ema20_v5) > i_dist_ema20 * atr14_v5)
+
+trend_end_low_v5 = (
+    stoch_d_v5 < 20 and
+    pre5_disp_v5 < -i_pre5_trend_end * atr14_v5 and
+    lower_wick_v5 > 0.4 * atr14_v5 and
+    (close - ema20_v5) < -i_dist_ema20 * atr14_v5)
+
+// ════════════════════════════════════════════════════════════════════════════
+// 3. CELL 식별 (slot × atr_bin × pre_dir)
+// ════════════════════════════════════════════════════════════════════════════
+
+kst_h_v5  = hour(time, "Asia/Seoul")
+kst_m_v5  = minute(time, "Asia/Seoul")
+kst_hm_v5 = kst_h_v5 * 100 + kst_m_v5
+
+slot_v5 = (
+    kst_hm_v5 >= 1900 and kst_hm_v5 < 2100 ? "EU_late" :
+    kst_hm_v5 >= 2100 and kst_hm_v5 < 2230 ? "NY_pre_open" :
+    kst_hm_v5 >= 2230 and kst_hm_v5 < 2300 ? "NY_open" :
+    (kst_hm_v5 >= 2300 or kst_hm_v5 < 100)  ? "NY_burst" :
+    kst_hm_v5 >= 100  and kst_hm_v5 < 500   ? "Asia_late" : "Other")
+
+atr_bin_v5 = (
+    atr_ratio_v5 < i_atr_bin_lo ? "low" :
+    atr_ratio_v5 < i_atr_bin_hi ? "mid" : "high")
+
+pre_dir_v5 = (
+    pre5_disp_v5 >  i_pre_dir_min * atr14_v5 ? "up" :
+    pre5_disp_v5 < -i_pre_dir_min * atr14_v5 ? "down" : "flat")
+
+// BTC hot spot (KST 23시, NY 10시)
+is_btc_hot_v5 = (kst_h_v5 == 23)
+
+// ════════════════════════════════════════════════════════════════════════════
+// 4. CELL GO FILTER (연구 BTC TOP cells, 5m 기준)
+// ════════════════════════════════════════════════════════════════════════════
+
+// GO LONG: 저점 detect + cell = Other/low/down
+//   → 연구 샤프 +0.775, 승률 83.6%, N=134
+go_long_cell_btc = (slot_v5 == "Other" and atr_bin_v5 == "low" and pre_dir_v5 == "down")
+go_long_btc = (inflection_low_v5 or trend_end_low_v5) and go_long_cell_btc
+
+// GO SHORT: 고점 detect + cell = Other/low/up
+//   → 연구 V+drift 27.6%, 샤프 +0.487, 승률 81.9%, N=105
+go_short_cell_btc = (slot_v5 == "Other" and atr_bin_v5 == "low" and pre_dir_v5 == "up")
+go_short_btc = (inflection_high_v5 or trend_end_high_v5) and go_short_cell_btc
+
+// ════════════════════════════════════════════════════════════════════════════
+// 5. PLOT (큰 라벨 금지)
+// ════════════════════════════════════════════════════════════════════════════
+
+// Detector — 작은 ▲▼
+plotshape(i_show_inflect and inflection_high_v5,
+          title="변곡 상단",
+          style=shape.triangledown, location=location.abovebar,
+          color=color.new(color.orange, 0), size=size.tiny)
+plotshape(i_show_inflect and inflection_low_v5,
+          title="변곡 하단",
+          style=shape.triangleup, location=location.belowbar,
+          color=color.new(color.aqua, 0), size=size.tiny)
+
+// Trend end — 작은 ◆
+plotshape(i_show_trend_end and trend_end_high_v5,
+          title="추세종료 상단",
+          style=shape.diamond, location=location.abovebar,
+          color=color.new(color.red, 20), size=size.tiny)
+plotshape(i_show_trend_end and trend_end_low_v5,
+          title="추세종료 하단",
+          style=shape.diamond, location=location.belowbar,
+          color=color.new(color.lime, 20), size=size.tiny)
+
+// 거래량 가중 ★ — detector 발동 + vol_boost 시
+any_top    = inflection_high_v5 or trend_end_high_v5
+any_bottom = inflection_low_v5  or trend_end_low_v5
+plotshape(i_show_vol_boost and any_top    and vol_boost,
+          title="vol boost (위)", style=shape.flag, location=location.abovebar,
+          color=color.new(color.yellow, 0), size=size.tiny)
+plotshape(i_show_vol_boost and any_bottom and vol_boost,
+          title="vol boost (아래)", style=shape.flag, location=location.belowbar,
+          color=color.new(color.yellow, 0), size=size.tiny)
+
+// GO 진입 신호 — small ▲▼ 색 강조
+plotshape(i_show_go and go_long_btc,
+          title="GO LONG (cell 승률 83.6%)",
+          style=shape.triangleup, location=location.belowbar,
+          color=color.new(color.lime, 0), size=size.small)
+plotshape(i_show_go and go_short_btc,
+          title="GO SHORT (cell 승률 81.9%)",
+          style=shape.triangledown, location=location.abovebar,
+          color=color.new(color.red, 0), size=size.small)
+
+// ════════════════════════════════════════════════════════════════════════════
+// 6. HUD (마이크로 4행)
+// ════════════════════════════════════════════════════════════════════════════
+
+var table h = table.new(position.bottom_right, 2, 4,
+                        bgcolor=color.new(color.black, 30), border_width=1)
+
+if i_show_hud and barstate.islast
+    cell_bg = color.new(color.black, 60)
+
+    // Row 0: 셀 (slot × atr × dir)
+    table.cell(h, 0, 0, "셀", bgcolor=cell_bg, text_color=color.silver)
+    cell_txt = slot_v5 + " · " + atr_bin_v5 + " · " + pre_dir_v5
+    cell_col = (go_long_cell_btc or go_short_cell_btc) ? color.lime : color.white
+    table.cell(h, 1, 0, cell_txt, bgcolor=cell_bg, text_color=cell_col)
+
+    // Row 1: detector 활성
+    table.cell(h, 0, 1, "detect", bgcolor=cell_bg, text_color=color.silver)
+    det_txt = inflection_high_v5 ? "변곡 ↑" :
+              inflection_low_v5  ? "변곡 ↓" :
+              trend_end_high_v5  ? "추세종료 ↑" :
+              trend_end_low_v5   ? "추세종료 ↓" : "-"
+    det_col = inflection_high_v5 or trend_end_high_v5 ? color.orange :
+              inflection_low_v5  or trend_end_low_v5  ? color.aqua : color.gray
+    table.cell(h, 1, 1, det_txt, bgcolor=cell_bg, text_color=det_col)
+
+    // Row 2: 거래량 + KST hot
+    table.cell(h, 0, 2, "vol/hot", bgcolor=cell_bg, text_color=color.silver)
+    vol_txt = (vol_boost ? "★ vol " : "") + (is_btc_hot_v5 ? "★ 23h" : "")
+    vol_txt := vol_txt == "" ? "-" : vol_txt
+    vol_col = vol_boost or is_btc_hot_v5 ? color.yellow : color.gray
+    table.cell(h, 1, 2, vol_txt, bgcolor=cell_bg, text_color=vol_col)
+
+    // Row 3: GO status
+    table.cell(h, 0, 3, "GO", bgcolor=cell_bg, text_color=color.silver)
+    go_txt = go_long_btc ? "▲ LONG" : go_short_btc ? "▼ SHORT" : "-"
+    go_col = go_long_btc ? color.lime : go_short_btc ? color.red : color.gray
+    table.cell(h, 1, 3, go_txt, bgcolor=cell_bg, text_color=go_col)
+
+// ════════════════════════════════════════════════════════════════════════════
+// 7. ALERTS
+// ════════════════════════════════════════════════════════════════════════════
+
+// GO (Tier A) 만 alert (default)
+if go_long_btc
+    alert("BTC v5 GO LONG · cell=Other/low/down · 연구 WR 83.6% / sharpe +0.775", alert.freq_once_per_bar)
+if go_short_btc
+    alert("BTC v5 GO SHORT · cell=Other/low/up · 연구 WR 81.9% / sharpe +0.487", alert.freq_once_per_bar)
+
+if not i_alert_go_only
+    if inflection_high_v5
+        alert("BTC v5 변곡 상단 · cell=" + slot_v5 + "/" + atr_bin_v5 + "/" + pre_dir_v5 +
+              (vol_boost ? " · ★vol" : ""), alert.freq_once_per_bar)
+    if inflection_low_v5
+        alert("BTC v5 변곡 하단 · cell=" + slot_v5 + "/" + atr_bin_v5 + "/" + pre_dir_v5 +
+              (vol_boost ? " · ★vol" : ""), alert.freq_once_per_bar)
+    if trend_end_high_v5
+        alert("BTC v5 강한 상승 종료 · cell=" + slot_v5 + "/" + atr_bin_v5 + "/" + pre_dir_v5 +
+              (vol_boost ? " · ★vol" : ""), alert.freq_once_per_bar)
+    if trend_end_low_v5
+        alert("BTC v5 강한 하락 종료 · cell=" + slot_v5 + "/" + atr_bin_v5 + "/" + pre_dir_v5 +
+              (vol_boost ? " · ★vol" : ""), alert.freq_once_per_bar)
+
+alertcondition(go_long_btc,        title="BTC GO LONG (셀 WR 83.6%)",  message="BTC v5 GO LONG fire")
+alertcondition(go_short_btc,       title="BTC GO SHORT (셀 WR 81.9%)", message="BTC v5 GO SHORT fire")
+alertcondition(inflection_high_v5, title="변곡 상단 detector",         message="BTC v5 inflection_high")
+alertcondition(inflection_low_v5,  title="변곡 하단 detector",         message="BTC v5 inflection_low")
+alertcondition(trend_end_high_v5,  title="강한 상승 종료 detector",     message="BTC v5 trend_end_high")
+alertcondition(trend_end_low_v5,   title="강한 하락 종료 detector",     message="BTC v5 trend_end_low")

@@ -1,0 +1,222 @@
+//@version=6
+// ============================================================================
+// BTC Common v4 — EMA + VWAP + BB + 세션 박스 + HUD (BTC 24/7 적응)
+// ============================================================================
+// 출처: NQ Common_v4 의 BTC 적응 (https://ggobugithesquirtle.github.io/mnq-v4-path-research/btc/)
+//
+// 적응 (NQ → BTC):
+//   - 24/7 거래 — 세션 박스는 참고용 (거래 가능 시간 표시 X)
+//   - KST 23시 (= NY 10시 = 시장 첫 시간) = BTC 변곡 hot spot 강조
+//   - 그 외 EMA/VWAP/BB 룰 동일 (가격 ATR 정규화로 자동 보정)
+//
+// 통일 색·두께 룰 (NQ 와 동일):
+//   EMA20 흰 굵 (3px) / EMA50 주황 중 (2px) / EMA200 빨강 얇 (1px)
+//   BB 회색 얇 fill 없음 / VWAP 청록 stepline
+//
+// 차트 셋업:
+//   5m / 15m / 1h / 4h 차트 모두 → BTC_Common_v4 + BTC_v5_Fingerprint 동시 활성
+// ============================================================================
+
+indicator("BTC Common v4", overlay=true, max_labels_count=50, max_boxes_count=50)
+
+// ════════════════════════════════════════════════════════════════════════════
+// 0. INPUTS
+// ════════════════════════════════════════════════════════════════════════════
+
+i_show_hud      = input.bool(true,  "HUD 표시",                   group="1. HUD")
+i_hud_pos       = input.string("top_right", "HUD 위치",
+                    options=["top_right", "top_left", "bottom_right", "bottom_left"],
+                    group="1. HUD")
+
+show_sess_box   = input.bool(true,  "세션 박스 (Asian/EU/US, BTC 참고용)", group="2. Sessions")
+show_sess_hl    = input.bool(true,  "세션 H/L stepline",                  group="2. Sessions")
+show_btc_hot    = input.bool(true,  "KST 23시 hot spot 표시 (얇은 vline)", group="2. Sessions",
+                    tooltip="BTC 변곡 1순위 시간대 — NY 10시 (시장 첫 시간 1h 후)")
+
+i_show_emas     = input.bool(true,  "EMA 20/50/200 표시",          group="3. Reference")
+i_show_vwap     = input.bool(true,  "Session VWAP 표시",           group="3. Reference")
+i_show_bb       = input.bool(true,  "Bollinger Band 20·2 표시",     group="3. Reference",
+                    tooltip="v5 변곡 detector 의 BB %B 70/30 임계값 시각화")
+
+// ════════════════════════════════════════════════════════════════════════════
+// 1. INDICATORS
+// ════════════════════════════════════════════════════════════════════════════
+
+ema20  = ta.ema(close, 20)
+ema50  = ta.ema(close, 50)
+ema200 = ta.ema(close, 200)
+ema_up   = ema20 > ema50 and ema50 > ema200
+ema_down = ema20 < ema50 and ema50 < ema200
+
+ma20 = ta.sma(close, 20)
+sd20 = ta.stdev(close, 20)
+bb_up    = ma20 + 2 * sd20
+bb_lo    = ma20 - 2 * sd20
+bb_width = (bb_up - bb_lo) / ma20 * 100
+vol_tier = bb_width < 0.12 ? "LOW" : bb_width < 0.25 ? "MED" : "HIGH"
+
+vwap_day = ta.vwap(hlc3)
+
+// ════════════════════════════════════════════════════════════════════════════
+// 2. TIME (KST + ET sessions)
+// ════════════════════════════════════════════════════════════════════════════
+
+kst_hour = hour(time, "Asia/Seoul")
+kst_min  = minute(time, "Asia/Seoul")
+kst_hm   = kst_hour * 100 + kst_min
+
+et_h       = hour(time, "America/New_York")
+is_asian   = (et_h >= 18) or (et_h < 3)
+is_london  = (et_h >= 3) and (et_h < 8)
+is_ny_open = (et_h >= 8) and (et_h < 10)
+is_ny_reg  = (et_h >= 10) and (et_h < 16)
+is_us_sess = is_ny_open or is_ny_reg
+
+// BTC hot spot: KST 23:00~23:59 (NY 10:00~10:59 = mid-morning)
+is_btc_hot = (kst_hour == 23)
+
+// ════════════════════════════════════════════════════════════════════════════
+// 3. SESSION BOXES + H/L STEPLINE (NQ 와 동일)
+// ════════════════════════════════════════════════════════════════════════════
+
+asia_enter = is_asian   and not is_asian[1]
+eu_enter   = is_london  and not is_london[1]
+us_enter   = is_us_sess and not is_us_sess[1]
+
+var box cur_asia_box = na
+var box cur_eu_box   = na
+var box cur_us_box   = na
+
+if show_sess_box and asia_enter
+    cur_asia_box := box.new(bar_index, high, bar_index, low,
+         border_color=color.new(#845ef7, 40), bgcolor=color.new(#845ef7, 94),
+         border_width=1, border_style=line.style_dashed,
+         text="ASIA (18:00-03:00 ET)", text_size=size.tiny,
+         text_color=color.new(#845ef7, 30),
+         text_halign=text.align_left, text_valign=text.align_top)
+if show_sess_box and is_asian and not na(cur_asia_box)
+    box.set_top(cur_asia_box,    math.max(box.get_top(cur_asia_box), high))
+    box.set_bottom(cur_asia_box, math.min(box.get_bottom(cur_asia_box), low))
+    box.set_right(cur_asia_box,  bar_index)
+
+if show_sess_box and eu_enter
+    cur_eu_box := box.new(bar_index, high, bar_index, low,
+         border_color=color.new(#f59e0b, 40), bgcolor=color.new(#f59e0b, 94),
+         border_width=1, border_style=line.style_dashed,
+         text="LONDON (03:00-08:00 ET)", text_size=size.tiny,
+         text_color=color.new(#f59e0b, 30),
+         text_halign=text.align_left, text_valign=text.align_top)
+if show_sess_box and is_london and not na(cur_eu_box)
+    box.set_top(cur_eu_box,    math.max(box.get_top(cur_eu_box), high))
+    box.set_bottom(cur_eu_box, math.min(box.get_bottom(cur_eu_box), low))
+    box.set_right(cur_eu_box,  bar_index)
+
+if show_sess_box and us_enter
+    cur_us_box := box.new(bar_index, high, bar_index, low,
+         border_color=color.new(#06b6d4, 40), bgcolor=color.new(#06b6d4, 94),
+         border_width=1, border_style=line.style_dashed,
+         text="US (08:00-16:00 ET)", text_size=size.tiny,
+         text_color=color.new(#06b6d4, 30),
+         text_halign=text.align_left, text_valign=text.align_top)
+if show_sess_box and is_us_sess and not na(cur_us_box)
+    box.set_top(cur_us_box,    math.max(box.get_top(cur_us_box), high))
+    box.set_bottom(cur_us_box, math.min(box.get_bottom(cur_us_box), low))
+    box.set_right(cur_us_box,  bar_index)
+
+// 직전 세션 H/L stepline
+var float sess_asia_h = na
+var float sess_asia_l = na
+var float sess_eu_h   = na
+var float sess_eu_l   = na
+var float sess_us_h   = na
+var float sess_us_l   = na
+
+if asia_enter
+    sess_asia_h := high
+    sess_asia_l := low
+else if is_asian
+    sess_asia_h := math.max(nz(sess_asia_h, high), high)
+    sess_asia_l := math.min(nz(sess_asia_l, low),  low)
+
+if eu_enter
+    sess_eu_h := high
+    sess_eu_l := low
+else if is_london
+    sess_eu_h := math.max(nz(sess_eu_h, high), high)
+    sess_eu_l := math.min(nz(sess_eu_l, low),  low)
+
+if us_enter
+    sess_us_h := high
+    sess_us_l := low
+else if is_us_sess
+    sess_us_h := math.max(nz(sess_us_h, high), high)
+    sess_us_l := math.min(nz(sess_us_l, low),  low)
+
+plot(show_sess_hl and not is_asian   ? sess_asia_h : na, "Asia H",   color.new(#845ef7, 45), 1, plot.style_stepline)
+plot(show_sess_hl and not is_asian   ? sess_asia_l : na, "Asia L",   color.new(#845ef7, 45), 1, plot.style_stepline)
+plot(show_sess_hl and not is_london  ? sess_eu_h   : na, "London H", color.new(#f59e0b, 45), 1, plot.style_stepline)
+plot(show_sess_hl and not is_london  ? sess_eu_l   : na, "London L", color.new(#f59e0b, 45), 1, plot.style_stepline)
+plot(show_sess_hl and not is_us_sess ? sess_us_h   : na, "US H",     color.new(#06b6d4, 45), 1, plot.style_stepline)
+plot(show_sess_hl and not is_us_sess ? sess_us_l   : na, "US L",     color.new(#06b6d4, 45), 1, plot.style_stepline)
+
+// BTC hot spot 표시 (KST 23:00 시작 시점에 얇은 노랑 vline)
+btc_hot_enter = is_btc_hot and not is_btc_hot[1]
+if show_btc_hot and btc_hot_enter
+    line.new(bar_index, low * 0.9995, bar_index, high * 1.0005,
+         color=color.new(color.yellow, 50), width=1, style=line.style_dotted,
+         extend=extend.both)
+
+// ════════════════════════════════════════════════════════════════════════════
+// 4. EMA + VWAP + BB PLOTS
+// ════════════════════════════════════════════════════════════════════════════
+
+// 통일 색/두께 룰: EMA20 흰(굵)/EMA50 주황/EMA200 빨강(얇).
+plot(i_show_emas ? ema20  : na, "EMA20",  color=color.new(color.white,  10), linewidth=3)
+plot(i_show_emas ? ema50  : na, "EMA50",  color=color.new(color.orange, 20), linewidth=2)
+plot(i_show_emas ? ema200 : na, "EMA200", color=color.new(color.red,    30), linewidth=1)
+plot(i_show_vwap ? vwap_day : na, "VWAP", color=color.new(color.aqua,   40), style=plot.style_stepline)
+
+// BB 20·2 (회색 얇 fill 없음)
+plot(i_show_bb ? bb_up : na, "BB Up (20·2)", color.new(color.gray, 65), 1)
+plot(i_show_bb ? bb_lo : na, "BB Lo (20·2)", color.new(color.gray, 65), 1)
+
+// ════════════════════════════════════════════════════════════════════════════
+// 5. HUD (5행: KST / Session / EMA Align / Vol Tier / BTC Hot)
+// ════════════════════════════════════════════════════════════════════════════
+
+hud_position = (i_hud_pos == "top_right" ? position.top_right : i_hud_pos == "top_left" ? position.top_left : i_hud_pos == "bottom_right" ? position.bottom_right : position.bottom_left)
+
+var table hud = table.new(position=hud_position, columns=2, rows=5, border_width=1)
+
+if i_show_hud and barstate.islast
+    cell_bg = color.new(color.black, 60)
+
+    // Row 0: KST
+    table.cell(hud, 0, 0, "KST", bgcolor=cell_bg, text_color=color.silver)
+    hour_str = str.tostring(kst_hour, "00") + ":" + str.tostring(kst_min, "00")
+    kst_col = is_btc_hot ? color.yellow : color.white
+    table.cell(hud, 1, 0, hour_str, bgcolor=cell_bg, text_color=kst_col)
+
+    // Row 1: Session
+    table.cell(hud, 0, 1, "Session", bgcolor=cell_bg, text_color=color.silver)
+    sess_txt = is_asian ? "ASIA" : is_london ? "LONDON" : is_ny_open ? "NY OPEN" : is_ny_reg ? "NY REG" : "CLOSE"
+    sess_col = is_ny_open ? #f59e0b : is_ny_reg ? #06b6d4 : is_london ? #f59e0b : is_asian ? #845ef7 : color.gray
+    table.cell(hud, 1, 1, sess_txt, bgcolor=cell_bg, text_color=sess_col)
+
+    // Row 2: EMA Align
+    table.cell(hud, 0, 2, "EMA Align", bgcolor=cell_bg, text_color=color.silver)
+    ema_txt = ema_up ? "UP ↑" : ema_down ? "DOWN ↓" : "MIXED"
+    ema_col = ema_up ? color.lime : ema_down ? color.red : color.gray
+    table.cell(hud, 1, 2, ema_txt, bgcolor=cell_bg, text_color=ema_col)
+
+    // Row 3: vol_tier
+    table.cell(hud, 0, 3, "vol_tier", bgcolor=cell_bg, text_color=color.silver)
+    vt_col = vol_tier == "HIGH" ? color.red : vol_tier == "MED" ? color.yellow : color.gray
+    table.cell(hud, 1, 3, vol_tier + " (" + str.tostring(bb_width, "#.##") + "%)",
+               bgcolor=cell_bg, text_color=vt_col)
+
+    // Row 4: BTC hot spot
+    table.cell(hud, 0, 4, "BTC Hot", bgcolor=cell_bg, text_color=color.silver)
+    hot_txt = is_btc_hot ? "★ KST 23h" : "off"
+    hot_col = is_btc_hot ? color.yellow : color.gray
+    table.cell(hud, 1, 4, hot_txt, bgcolor=cell_bg, text_color=hot_col)

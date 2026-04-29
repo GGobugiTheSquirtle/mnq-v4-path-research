@@ -93,8 +93,9 @@ footer { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border
 <li class="sub"><a href="#r2">3.2 KST 시간대 효과</a></li>
 <li class="sub"><a href="#r3">3.3 조건부 셀 ⭐</a></li>
 <li class="sub"><a href="#r4">3.4 Cross-asset (NQ vs BTC) ⭐</a></li>
-<li><a href="#impl">4. 거래 함의</a></li>
-<li><a href="#repro">5. 재현·한계</a></li>
+<li><a href="#pine">4. Pine 룰 (BTC) ⭐</a></li>
+<li><a href="#impl">5. 거래 함의</a></li>
+<li><a href="#repro">6. 재현·한계</a></li>
 </ul>
 <div class="pages">
 <a href="../" >NQ v4_path 연구 →</a>
@@ -290,8 +291,98 @@ TF 클수록 lift 강함 (5m 1.60 → 1h 2.53). BTC 24/7 거래라 시간대 노
 </section>
 </section>
 
+<section id="pine">
+<h2>4. Pine 룰 (BTC 적응)</h2>
+
+<p>본 연구 결과를 직접 반영한 Pine 인디케이터 2종. NQ 의 <code>v5_Fingerprint</code> 룰을 BTC 24/7 + KST 23시 hot spot + 거래량 가중에 맞게 조정. 코드는 <code>crypto_scan/research/v4_btc/pine/</code> 위치.</p>
+
+<h3>4.1 BTC_Common_v4 (환경)</h3>
+<table>
+<tr><th>마커</th><th>색·두께</th><th>의미</th><th>NQ 와 차이</th></tr>
+<tr><td>EMA20 / 50 / 200</td><td>흰 굵 / 주황 중 / 빨강 얇</td><td>단/중/장기 추세선</td><td>동일 룰</td></tr>
+<tr><td>VWAP</td><td>청록 stepline</td><td>일중 평형점</td><td>동일</td></tr>
+<tr><td>BB 20·2</td><td>회색 얇 (fill 없음)</td><td>v5 변곡 임계 시각화</td><td>동일</td></tr>
+<tr><td>아시아 / 런던 / 미국 세션</td><td>보라 / 주황 / 청록 박스</td><td>참고용 (BTC 24/7)</td><td>NQ 는 진입 가능 시간 표시 / BTC 는 단순 컨텍스트</td></tr>
+<tr><td><b>KST 23시 hot vline</b></td><td>노랑 점선 (얇)</td><td>BTC 변곡 1순위 시간대 마커</td><td>BTC 신규 (NY 10시)</td></tr>
+</table>
+<p><b>HUD 5행</b>: KST 시각 (23시 노랑 강조) / Session / EMA 정렬 / 변동성 구간 / <b>BTC Hot 표시</b>.</p>
+
+<h3>4.2 BTC_v5_Fingerprint (변곡·추세종료 + 셀 GO)</h3>
+<table>
+<tr><th>마커</th><th>색·위치</th><th>의미</th><th>발동 조건</th></tr>
+<tr><td><span style="color:#f0883e">▼</span> 변곡 상단</td><td>주황 ▼ · 위</td><td>상승 후 반전 후보</td><td>위꼬리 &gt; 0.5×ATR · 사전 5봉 +0.8×ATR · 스토캐K &gt; 65 · BB%B &gt; 70</td></tr>
+<tr><td><span style="color:#5cb6c7">▲</span> 변곡 하단</td><td>청록 ▲ · 아래</td><td>하락 후 반전 후보</td><td>대칭 (스토캐K &lt; 35 · BB%B &lt; 30 등)</td></tr>
+<tr><td><span style="color:#f85149">◆</span> 강한 상승 종료</td><td>빨강 ◆ · 위</td><td>강상승 끝 후보</td><td>스토캐D &gt; 80 · 사전 5봉 +1.5×ATR · 위꼬리 &gt; 0.4×ATR · close-EMA20 &gt; 1.0×ATR</td></tr>
+<tr><td><span style="color:#3fb950">◆</span> 강한 하락 종료</td><td>초록 ◆ · 아래</td><td>강하락 끝 후보</td><td>대칭</td></tr>
+<tr><td><span style="color:#d29922">▮</span> 거래량 가중 ★</td><td>노랑 flag · 봉 위/아래</td><td><b>BTC 신규</b> — detector 발동 + 거래량 시그널 강함</td><td>vol_z &gt; 1.0 또는 rvol &gt; 1.5 (사용자 임계 조정)</td></tr>
+<tr><td><span class="hi">▲ GO LONG</span></td><td>밝은 초록 ▲ (small)</td><td><b>실제 진입 신호</b></td><td>변곡·추세종료 하단 + 셀 = 기타시간/저ATR/사전하락 → <b>승률 83.6% / 샤프 +0.775 / N=134</b></td></tr>
+<tr><td><span class="hi">▼ GO SHORT</span></td><td>밝은 빨강 ▼ (small)</td><td><b>실제 진입 신호</b></td><td>변곡·추세종료 상단 + 셀 = 기타시간/저ATR/사전상승 → <b>승률 81.9% / 샤프 +0.487 / N=105</b></td></tr>
+</table>
+<p><b>마이크로 HUD 4행</b> (오른쪽 아래): 현재 셀 / 마지막 detector / 거래량·hot spot 표시 / GO 상태.</p>
+
+<h3>4.3 핵심 Pine 코드 (BTC 특화 부분)</h3>
+
+<h4>거래량 가중 (BTC 만)</h4>
+<pre><code><span class="c">// vol_z + rvol — BTC 에선 NQ 보다 importance 높음</span>
+v_ma = ta.sma(volume, <span class="n">20</span>)
+v_std = ta.stdev(volume, <span class="n">20</span>)
+vol_z = v_std <span class="k">&gt;</span> <span class="n">0</span> <span class="k">?</span> (volume <span class="k">-</span> v_ma) <span class="k">/</span> v_std <span class="k">:</span> <span class="n">0.0</span>
+rvol_ma = ta.sma(volume, i_rvol_length)  <span class="c">// 5m=288, 15m=96, 1h=24, 4h=6</span>
+rvol = rvol_ma <span class="k">&gt;</span> <span class="n">0</span> <span class="k">?</span> volume <span class="k">/</span> rvol_ma <span class="k">:</span> <span class="n">1.0</span>
+
+vol_boost <span class="k">=</span> vol_z <span class="k">&gt;</span> <span class="n">1.0</span> <span class="k">or</span> rvol <span class="k">&gt;</span> <span class="n">1.5</span>
+
+<span class="c">// detector 발동 + vol_boost 동시 시 ★ flag 추가 표시</span></code></pre>
+
+<h4>BTC 셀 GO 필터 (NQ 와 동일 패턴, BTC 결과 직접 반영)</h4>
+<pre><code><span class="c">// GO LONG: 저점 detect + cell = 기타/저ATR/사전하락</span>
+<span class="c">//   → 연구 결과 샤프 +0.775, 승률 83.6%, N=134</span>
+go_long_cell_btc <span class="k">=</span> (slot <span class="k">==</span> <span class="s">"Other"</span> <span class="k">and</span> atr_bin <span class="k">==</span> <span class="s">"low"</span>
+                    <span class="k">and</span> pre_dir <span class="k">==</span> <span class="s">"down"</span>)
+go_long_btc <span class="k">=</span> (inflection_low <span class="k">or</span> trend_end_low) <span class="k">and</span> go_long_cell_btc
+
+<span class="c">// GO SHORT: 고점 detect + cell = 기타/저ATR/사전상승</span>
+<span class="c">//   → V+추세 27.6%, 샤프 +0.487, 승률 81.9%, N=105</span>
+go_short_cell_btc <span class="k">=</span> (slot <span class="k">==</span> <span class="s">"Other"</span> <span class="k">and</span> atr_bin <span class="k">==</span> <span class="s">"low"</span>
+                     <span class="k">and</span> pre_dir <span class="k">==</span> <span class="s">"up"</span>)
+go_short_btc <span class="k">=</span> (inflection_high <span class="k">or</span> trend_end_high) <span class="k">and</span> go_short_cell_btc</code></pre>
+
+<h4>KST 23시 BTC hot spot (Common 에)</h4>
+<pre><code>kst_hour <span class="k">=</span> hour(time, <span class="s">"Asia/Seoul"</span>)
+is_btc_hot <span class="k">=</span> (kst_hour <span class="k">==</span> <span class="n">23</span>)  <span class="c">// NY 10시 (시장 첫 시간 1h 후)</span>
+
+<span class="c">// 진입 시점 노랑 점선 vline 추가</span>
+<span class="k">if</span> show_btc_hot <span class="k">and</span> btc_hot_enter
+    line.new(bar_index, low <span class="k">*</span> <span class="n">0.9995</span>, bar_index, high <span class="k">*</span> <span class="n">1.0005</span>,
+        color<span class="k">=</span>color.new(color.yellow, <span class="n">50</span>), width<span class="k">=</span><span class="n">1</span>,
+        style<span class="k">=</span>line.style_dotted, extend<span class="k">=</span>extend.both)</code></pre>
+
+<h3>4.4 차트 셋업 (TDV)</h3>
+<table>
+<tr><th>차트 TF</th><th>활성 indicator</th><th>주력 신호</th></tr>
+<tr><td><b>5m</b></td><td>BTC_Common_v4 + BTC_v5_Fingerprint</td><td>변곡·추세종료 detector + GO LONG/SHORT (셀 WR 83.6%/81.9%)</td></tr>
+<tr><td><b>15m</b></td><td>동일</td><td>KST 23시 lift 2.31x 활용 — NY 첫 시간 진입</td></tr>
+<tr><td><b>1h</b></td><td>동일 (단 RVOL 윈도 24 로 조정)</td><td>최강 lift 2.53x · TOP HIGH EV 셀 샤프 +0.477</td></tr>
+<tr><td><b>4h</b></td><td>동일 (RVOL 윈도 6)</td><td>표본 적음 — 참고 용</td></tr>
+</table>
+
+<h3>4.5 NQ Pine 과의 차이 요약</h3>
+<table>
+<tr><th>항목</th><th>NQ v5_Fingerprint</th><th>BTC v5_Fingerprint</th></tr>
+<tr><td>거래 시간 필터</td><td>session_active 룰 (KST 21:00-01:45)</td><td>제거 (24/7)</td></tr>
+<tr><td>1순위 hot spot</td><td>KST 21시 (NY pre-open)</td><td><b>KST 23시 (NY 10시)</b></td></tr>
+<tr><td>거래량 가중</td><td>없음 (NQ 에선 marginal)</td><td><b>vol_z + rvol 별도 ★ 마커</b></td></tr>
+<tr><td>GO LONG 셀</td><td>저점/기타/저ATR/하락 (NQ 1m, WR 77.8%)</td><td>저점/기타/저ATR/하락 (BTC 5m, WR 83.6%) — <b>패턴 동일</b></td></tr>
+<tr><td>HUD 행수</td><td>3행</td><td>4행 (vol/hot 행 추가)</td></tr>
+</table>
+
+<div class="callout success">
+NQ 와 BTC 모두 동일 패턴 셀이 가장 강력 — Pine 룰의 자산 독립성 입증. BTC 만 의 추가 강화 = KST 23시 시간대 + 거래량 가중. 기존 NQ 운용자는 시간대 + 거래량 임계만 조정하면 즉시 BTC 적용 가능.
+</div>
+</section>
+
 <section id="impl">
-<h2>4. 거래 함의</h2>
+<h2>5. 거래 함의</h2>
 <table>
 <tr><th>능력</th><th class="num">정확도</th><th>비고</th></tr>
 <tr><td>BTC 변곡점 식별 (실시간)</td><td class="num pass">AUC 0.86~0.92</td><td>4 TF 모두 적용 가능</td></tr>
@@ -311,7 +402,7 @@ TF 클수록 lift 강함 (5m 1.60 → 1h 2.53). BTC 24/7 거래라 시간대 노
 </section>
 
 <section id="repro">
-<h2>5. 재현·한계</h2>
+<h2>6. 재현·한계</h2>
 <h3>코드</h3>
 <pre><code>crypto_scan<span class="k">/</span>research<span class="k">/</span>v4_btc<span class="k">/</span>
 ├── download_3y.py            <span class="c"># ccxt Bybit 3년 5m 다운로드</span>
